@@ -1,20 +1,8 @@
-import ceylon.language.meta {
-    annotations
-}
-import ceylon.language.meta.declaration {
-    ValueDeclaration
-}
 import ceylon.language.meta.model {
-    Function,
-    Interface,
-    Class,
-    UnionType,
-    Type,
+	Class,
+	UnionType,
+	Type,
 	ClassOrInterface
-}
-
-import de.dlkw.conjurup.annotations {
-    ParamAnnotation
 }
 
 TypeConverters tc = TypeConverters();

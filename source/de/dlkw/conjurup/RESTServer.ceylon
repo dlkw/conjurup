@@ -1,50 +1,48 @@
 import ceylon.collection {
-    HashMap
+	HashMap
+}
+import ceylon.json {
+	JsonValue=Value,
+	jsonParse=parse
 }
 import ceylon.language.meta {
-    type,
-    annotations,
-    typeLiteral
+	type,
+	annotations,
+	typeLiteral
 }
 import ceylon.language.meta.declaration {
-    FunctionDeclaration,
-    ValueDeclaration,
-    FunctionOrValueDeclaration
+	FunctionDeclaration,
+	ValueDeclaration
 }
 import ceylon.language.meta.model {
-    Function,
-    Interface,
-    Class,
-    Type,
+	Function,
+	Interface,
+	Type,
 	ClassOrInterface
 }
 import ceylon.logging {
-    Logger,
-    logger,
-    trace
+	Logger,
+	logger,
+	trace
 }
 import ceylon.net.http {
-    HttpMethod=Method,
-    contentTypeFormUrlEncoded,
+	HttpMethod=Method,
+	contentTypeFormUrlEncoded,
 	Header
 }
 import ceylon.net.http.server {
-    Server,
-    newServer,
-    Request,
-    Response,
-    TemplateEndpoint
+	Server,
+	newServer,
+	Request,
+	Response,
+	TemplateEndpoint
 }
 
 import de.dlkw.conjurup.annotations {
-    ResourceAccessorAnnotation,
-    PathAnnotation,
-    ParamAnnotation,
-    ConsumesAnnotation
-}
-import ceylon.json {
-    JsonValue = Value,
-    jsonParse = parse
+	ResourceAccessorAnnotation,
+	PathAnnotation,
+	ParamAnnotation,
+	ConsumesAnnotation
 }
 
 Logger log = logger(`package de.dlkw.conjurup`);
@@ -401,10 +399,6 @@ shared abstract class ContentTypeHandler<out Entity>(shared String contentType)
     shared formal Entity convertiEntity(String body);
     shared Entity convertEntity(String body, Type<> _type)
     {
-        value x = `Entity`;
-        value y = `given Entity`;
-        value z = typeLiteral<Entity>();
-
         if (_type.subtypeOf(`Entity`)) {
             return convertiEntity(body);
         }

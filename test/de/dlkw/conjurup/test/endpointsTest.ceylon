@@ -1,26 +1,24 @@
-import ceylon.test {
-	test,
-	fail,
-	beforeTest
-}
-import ceylon.net.http {
-	get
-}
-import de.dlkw.conjurup.annotations {
-	param
-}
 import ceylon.logging {
 	addLogWriter,
 	writeSimpleLog
 }
 import ceylon.math.decimal {
-	Decimal,
-	parseDecimal
+	Decimal
 }
+import ceylon.net.http {
+	get
+}
+import ceylon.test {
+	test,
+	beforeTest
+}
+
 import de.dlkw.conjurup {
 	RESTServer,
-	nullPropagationConverter,
 	ConversionError
+}
+import de.dlkw.conjurup.annotations {
+	param
 }
 
 beforeTest

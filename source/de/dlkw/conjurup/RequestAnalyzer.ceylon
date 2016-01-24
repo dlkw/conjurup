@@ -66,7 +66,7 @@ Map<String, String[]> extractQueryParameters(String queryString)
         String name;
         String val;
         if (exists index = param.firstIndexWhere('='.equals)) {
-            value sliced = param.slice(index);
+            //value sliced = param.slice(index);
             name = param.initial(index);
             val = param.spanFrom(index + 1);
         }
