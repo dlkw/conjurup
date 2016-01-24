@@ -1,0 +1,10 @@
+/.ceylon/
+/.exploded/
+
+/modules/
+
+*.swp
+
+.classpath
+.project
+/.settings/
