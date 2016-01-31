@@ -105,3 +105,16 @@ To get the Swagger definition of your API as a JSON object, call
     Object swagger = restServer.swagger;
 ```
 after it is started.
+
+### Adding type decoders
+
+To support more parameter types, you can register decoders. For example, to get `ceylon.time::Date` via its
+`parseDate` function:
+
+```
+restServer.registerTypeConverter(nullPropagationConverter(parseDate));
+```
+
+The `nullPropagatingConverter` is a convenience function to use "standard" Ceylon type parsing functions
+with a semantic like `parseInteger`, `parseFloat` etc. To see how to use another `null`-semantics,
+see the source code for TypeConverters.booleanConverter.
