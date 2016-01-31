@@ -83,15 +83,17 @@ the `name` parameter of the `param` annotation.
 Create an instance of RESTServer and add the functions you wish to make available, then start the server:
 
 ```ceylon
-	import de.dlkw.conjurup {
-	    RESTServer
-	}
+import de.dlkw.conjurup {
+    RESTServer
+}
 	
+shared void run() {
 	value restServer = RESTServer();
 	
 	restServer.addEndpoint("add", get, `addAll`);
 	// ... more functions
 	restServer.start();
+}
 ``` 
 
 This will start the server listening on `localhost:8080`.
@@ -101,3 +103,5 @@ You may not add more endpoints after the server is started.
 To get the Swagger definition of your API as a JSON object, call
 ```ceylon
     Object swagger = restServer.swagger;
+```
+after it is started.
