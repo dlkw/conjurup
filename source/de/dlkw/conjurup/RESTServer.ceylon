@@ -1,14 +1,16 @@
 import ceylon.collection {
-	HashMap
+	HashMap,
+	ArrayList
 }
 import ceylon.json {
 	JsonValue=Value,
+	JsonObject=Object,
+	JsonArray=Array,
 	jsonParse=parse
 }
 import ceylon.language.meta {
 	type,
-	annotations,
-	typeLiteral
+	annotations
 }
 import ceylon.language.meta.declaration {
 	FunctionDeclaration,
@@ -17,8 +19,7 @@ import ceylon.language.meta.declaration {
 import ceylon.language.meta.model {
 	Function,
 	Interface,
-	Type,
-	ClassOrInterface
+	Type
 }
 import ceylon.logging {
 	Logger,
@@ -38,11 +39,29 @@ import ceylon.net.http.server {
 	TemplateEndpoint
 }
 
+import de.dlkw.conjurup {
+	BodyParameterStuff
+}
 import de.dlkw.conjurup.annotations {
 	ResourceAccessorAnnotation,
 	PathAnnotation,
 	ParamAnnotation,
 	ConsumesAnnotation
+}
+import de.dlkw.conjurup.swagger {
+	PathItem,
+	swagger,
+	Path,
+	Parameter,
+	PIT,
+	BP,
+	ParameterLocation
+}
+import ceylon.io.charset {
+	utf8
+}
+import ceylon.time {
+	Date
 }
 
 Logger log = logger(`package de.dlkw.conjurup`);
@@ -61,31 +80,222 @@ shared class RESTServer()
     
     // make overridable/configurable
     ResponseConverter responseConverter = stdResponseConverter;
+    
+    value pathMap = HashMap<PathAndMethod, FunctionStuff>();
+    
+    void summarize()
+    {
+        for (p->m in pathMap) {
+            log.info("``p``: ``m.functionName``");
+        }
+    }
 
+	String mkSwagger()
+	{
+		value pM = HashMap<String, ArrayList<PathItem>>();
+		
+		PIT mkPit(SimpleParameterStuff ps)
+		{
+			String type;
+			if (ps.type == `String`) {
+				type = "string";
+			}
+			else if (ps.type == `Integer`) {
+				type = "integer";
+			}
+			else if (ps.type == `Boolean`) {
+				type = "boolean";
+			}
+			else {
+				throw AssertionError("unhandled parameter type ``ps.type``");
+			}
+
+			PIT pit = PIT(type, "", null);
+			return pit;
+		}
+		Parameter mkP(SimpleParameterStuff ps)
+		{
+			String type;
+			String? format;
+			PIT? pit;
+			if (ps.isMulti) {
+				type = "array";
+				format = null;
+				pit = mkPit(ps);
+			}
+			else {
+				pit = null;
+				if (ps.type == `String`) {
+					type = "string";
+					format = null;
+				}
+				else if (ps.type == `Integer`) {
+					type = "integer";
+					format = null;
+				}
+				else if (ps.type == `Float`) {
+					type = "number";
+					format = null;
+				}
+				else if (ps.type == `Boolean`) {
+					type = "boolean";
+					format = null;
+				}
+				// FIXME do it right
+				else if (ps.type == `Date`) {
+					type = "string";
+					format = "date";
+				}
+				else {
+					throw AssertionError("unhandled parameter type ``ps.type``");
+				}
+			}
+			
+			ParameterLocation location;
+			switch (ps.source)
+			case (query) {
+				location = ParameterLocation.query;
+			}
+			case (path) {
+				location = ParameterLocation.path;
+			}
+			case (header) {
+				location = ParameterLocation.header;
+			}
+			case (form) {
+				location = ParameterLocation.formData;
+			}
+			else {
+				throw AssertionError("unsupported parameter location ``ps.source``");
+			}
+
+			Parameter p = Parameter(ps.name,
+				location,
+				null, type, format, true, pit, !ps.nullAllowed);
+			return p;
+		}
+		
+		PathItem mkME(HttpMethod method, FunctionStuff fs)
+		{
+			variable Parameter[] pp = [];
+			variable BP? bp = null;
+			for (ps in fs.parameters) {
+				Parameter p;
+				if (is SimpleParameterStuff ps) {
+					p = mkP(ps);
+					pp = pp.withTrailing(p);
+				}
+				else {
+					// TODO need to get type from input class (object, array, string, etc.)
+					JsonObject schema = JsonObject {
+						"type" -> JsonArray {
+							"object", "array", "string", "number", "boolean", "null"
+						}
+					};
+					bp = BP(ps.name, schema, false);
+				}
+			}
+			PathItem me = PathItem(method, [fs.consumes], pp, bp, fs.response.type);
+			return me;
+		}
+		
+		for (pm -> ifs in pathMap) {
+			ArrayList<PathItem> ls;
+			ArrayList<PathItem>? mes = pM[pm.path];
+			if (is Null mes) {
+				ls = ArrayList<PathItem>();
+				pM.put(pm.path, ls);
+			}
+			else {
+				ls = mes;
+			}
+			ls.add(mkME(pm.method, ifs));
+		}
+
+		value eps = pM.map((a) => Path("/"+a.key, a.item.sequence()));
+		
+		value swaggerJ = swagger("detitl", "1.2.3", eps, "blafasel");
+		return swaggerJ.string;
+	}
+	
     "Starts this server in the current thread. This method will not return before the server is stopped."
-    shared void start() => httpServer.start();
+    shared void start()
+    {
+        summarize();
+        log.info(mkSwagger());
+        httpServer.start();
+    }
 
+	// not thread safe!
     shared void addEndpoint(path, method, annotatedFunction)
     {
         String path;
         HttpMethod method;
-        Function<Object, Nothing> annotatedFunction;
+        Function<Anything, Nothing> annotatedFunction;
+        
+        value functionStuff = doAddEndpoint(path, method, annotatedFunction);
 
-        value argumentCreators = buildArgumentCreators(annotatedFunction, path);
+		assertAbsentThenPut(path, functionStuff);
+
+        TemplateEndpoint endpoint = TemplateEndpoint(path, functionStuff.service, { method });
+        httpServer.addEndpoint(endpoint);
+    }
+    
+    // not thread safe!
+    void assertAbsentThenPut(path, functionStuffs)
+    {
+        String path;
+        FunctionStuff* functionStuffs;
+        
+        for (f in functionStuffs) {
+            if (exists c = pathMap.get(PathAndMethod(path, f.method))) {
+                throw AssertionError("duplicate ``f.method`` ``path`` in ``f.functionName`` clashes with ``c.functionName``");
+            }
+        }
+        for (f in functionStuffs) {
+            pathMap.put(PathAndMethod(path, f.method), f);
+        }
+    }
+    
+    FunctionStuff doAddEndpoint(path, method, annotatedFunction)
+    {
+        String path;
+        HttpMethod method;
+        Function<Anything, Nothing> annotatedFunction;
+
+        value [consumes, argumentCreators, response] = buildArgumentCreators(annotatedFunction, path);
 
         value service = (Request rq, Response rp)
         {
             try {
                 log.debug("called endpoint ``rq.relativePath``");
 
-                value requestAnalyzer = RequestAnalyzer(rq, argumentCreators.consumes);
+                RequestAnalyzer requestAnalyzer;
+                try {
+                    requestAnalyzer = RequestAnalyzer(rq, consumes);
+                }
+                catch (Exception e) {
+                    log.debug("Content-Type mismatch");
+                    rp.addHeader(Header("Content-Type", "text/plain"));
+                    rp.responseStatus = 415;
+                    rp.writeByteBuffer(utf8.encode(e.message));
+                    return;
+                }
 
-                value convertedRequestParms = argumentCreators.argumentCreators.collect((Anything(RequestAnalyzer) el) => el(requestAnalyzer));
+                value convertedRequestParms = argumentCreators
+                        .map((p) => p.argumentCreator)
+                        .collect((Anything(RequestAnalyzer) el) => el(requestAnalyzer));
                 variable Anything[] args = [];
-                variable NamedConversionError[] errors = [];
+                variable <NamedConversionError|BodyNoConverterError|BodyConversionError>[] errors = [];
                 log.debug("converted request parameters are: ``convertedRequestParms``");
                 for (x in convertedRequestParms) {
                     if (is NamedConversionError x) {
+                        errors = errors.withTrailing(x);
+                    }
+                    if (is BodyNoConverterError x) {
+                        errors = errors.withTrailing(x);
+                    }
+                    if (is BodyConversionError x) {
                         errors = errors.withTrailing(x);
                     }
                     else {
@@ -97,7 +307,11 @@ shared class RESTServer()
                 if (errors.empty) {
                     log.debug("dispatching to ``annotatedFunction`` using arguments ``convertedRequestParms``");
                     value result = annotatedFunction.apply(*args);
-                    log.debug("result was ``result``");
+                    log.debug(if (exists result) then "result was ``result``" else "no result (null or void)");
+                    if (is JsonValue result) {
+                        rp.addHeader(Header("Content-Type", "application/json"));
+                        rp.writeByteBuffer(responseConverter.convertResultToByte(result));
+                    }
                 }
                 else {
                     log.debug("conversion errors! ``errors``");
@@ -111,8 +325,9 @@ shared class RESTServer()
             }
         };
 
-        TemplateEndpoint endpoint = TemplateEndpoint(path, service, { method });
-        httpServer.addEndpoint(endpoint);
+        value functionStuff = FunctionStuff(annotatedFunction.string, method, consumes, argumentCreators, service, response);
+
+		return functionStuff;
     }
 
     shared void addResourceAccessor(Object obj)
@@ -177,7 +392,7 @@ shared class RESTServer()
         tc.putConverter(converter);
     }
 
-    ArgumentsCreator buildArgumentCreators(Function<Object, Nothing> annotatedFunction, String ppath, String objectConsumesDefault = contentTypeFormUrlEncoded)
+    [String, ParameterStuff[], ResponseStuff] buildArgumentCreators(Function<Anything, Nothing> annotatedFunction, String ppath, String objectConsumesDefault = contentTypeFormUrlEncoded)
     {
         value functionDeclaration = annotatedFunction.declaration;
 
@@ -189,17 +404,20 @@ shared class RESTServer()
             consumes = objectConsumesDefault;
         }
 
-        variable Object?(RequestAnalyzer)[] args = [];
+        variable ParameterStuff[] args = [];
 
         variable Boolean haveBodyParameter = false;
-        for (decl -> _ttype in zipEntries(functionDeclaration.parameterDeclarations, annotatedFunction.parameterTypes)) {
+        variable Boolean haveFormParameter = false;
+        // should this be necessary? why are parameterTypes not <Object?> ?
+        assert (is Type<Object?>[] tt = annotatedFunction.parameterTypes);
+        for (decl -> _ttype in zipEntries(functionDeclaration.parameterDeclarations, tt)) {
             assert (is ValueDeclaration decl);
 
             if (decl.defaulted) {
                 log.warn("default parameter value is not supported (``decl.qualifiedName``");
             }
 
-            Object?(RequestAnalyzer) parameterConverter;
+            ParameterStuff parameterConverter;
             // FIXME handle the case param(body) (same as no param annotation)
             if (exists paramAnnotation = annotations(`ParamAnnotation`, decl)) {
                 String parameterName;
@@ -215,10 +433,22 @@ shared class RESTServer()
                         throw AssertionError("path parameter ``parameterName`` not in path template ``ppath``");
                     }
                 }
+                if (paramAnnotation.type == form) {
+                    if (haveBodyParameter) {
+                        throw AssertionError("form and body parameters not possible simultaneously");
+                    }
+                    if (consumes != "application/x-www-form-urlencoded") {
+                        throw AssertionError("form parameter needs consumes(\"application/x-www-form-urlencoded\")");
+                    }
+                    haveFormParameter = true;
+                }
 
                 parameterConverter = buildArgumentCreator(parameterName, paramAnnotation.type, _ttype);
             }
             else {
+                if (haveFormParameter) {
+                    throw AssertionError("form and body parameters not possible simultaneously");
+                }
                 if (haveBodyParameter) {
                     throw AssertionError("no more than one body parameter allowed");
                 }
@@ -230,18 +460,19 @@ shared class RESTServer()
             args = args.withTrailing(parameterConverter);
         }
 
-        return ArgumentsCreator(consumes, args);
+		value t = annotatedFunction.type;
+        return [consumes, args, ResponseStuff(t)];
     }
 
-    Object?(RequestAnalyzer) buildArgumentCreator(String parameterName, ParamType paramType, Type<> _type)
+    SimpleParameterStuff buildArgumentCreator(String parameterName, ParamType paramType, Type<Object?> _type)
     {
-        [ClassOrInterface<>, Boolean] detailType;
+        //[ClassOrInterface<>, Boolean] detailType;
 
         if (_type.subtypeOf(`Iterable<Anything>`) && _type.supertypeOf(`Sequential<Nothing>`)) {
             log.debug("multi-valued parameter found: ``_type``");
 
             // only interface is possible here!
-            assert (is Interface<Anything> _type);
+            assert (is Interface<> _type);
             log.debug("type args: " + _type.typeArgumentList.string);
 
             // types in the considered hierarchy fragment above
@@ -249,34 +480,38 @@ shared class RESTServer()
             assert (nonempty typeArgList = _type.typeArgumentList);
             assert (typeArgList.shorterThan(2));
 
-            detailType = determineDetailType(typeArgList.first);
+			value x = typeArgList.first;
+			assert (is Type<Object?> x);
+            value [nonNullDetailType, detailType, nullAllowed] = determineNullability(x);
             
             <Object?[]|ListConversionError>({String*})? listTypeConverter;
-            if (detailType[1]) {
-                listTypeConverter = tc.getListTypeConverterDynamicallyN(detailType[0]);
+            if (nullAllowed) {
+                listTypeConverter = tc.getListTypeConverterDynamicallyN(nonNullDetailType);
             }
             else {
-                listTypeConverter = tc.getListTypeConverterDynamicallyNN(detailType[0]);
+                listTypeConverter = tc.getListTypeConverterDynamicallyNN(nonNullDetailType);
             }
             if (is Null listTypeConverter) {
-                throw Exception("no converter found for ``detailType[0]``");
+                throw Exception("no converter found for ``nonNullDetailType``");
             }
 
             value multivaluedStringParameterExtractor = getMultivaluedStringParameterExtractor(parameterName, paramType);
             value decorated = listConverterDecorated(listTypeConverter, parameterName, paramType);
             value parameterConverter = compose(decorated, multivaluedStringParameterExtractor);
-            return parameterConverter;
+
+            value result = SimpleParameterStuff(parameterName, paramType, nonNullDetailType, true, nullAllowed, parameterConverter);
+            return result;
         }
         else {
-            detailType = determineDetailType(_type);
+            value [nonNullDetailType, detailType, nullAllowed] = determineNullability(_type);
 
             value singlevaluedStringParameterExtractor = getSinglevaluedStringParameterExtractor(parameterName, paramType);
-            value typeConverter = tc.getTypeConverterDynamically(detailType);
+            value typeConverter = tc.getTypeConverterDynamically(nonNullDetailType, nullAllowed);
             if (is Null typeConverter) {
-                throw Exception("no converter found for ``detailType``");
+                throw Exception("no converter found for ``nonNullDetailType``");
             }
             
-            if (detailType[1]) {
+            if (nullAllowed) {
                 // TODO this may not always work
                 // it depends on name and presence of return value type parameter
                 // may not work for subclasses of Callable without such an explicit type parameter
@@ -295,7 +530,9 @@ shared class RESTServer()
             
             value decorated = converterDecorated(typeConverter, parameterName, paramType);
             value parameterConverter = compose(decorated, singlevaluedStringParameterExtractor);
-            return parameterConverter;
+            
+            value result = SimpleParameterStuff(parameterName, paramType, nonNullDetailType, false, nullAllowed, parameterConverter);
+            return result;
         }
     }
 
@@ -322,6 +559,9 @@ shared class RESTServer()
             return (RequestAnalyzer requestAnalyzer)
                     => requestAnalyzer.formParameter(parameterName);
         }
+        case (body) {
+            throw AssertionError("not supported in this program path");
+        }
     }
 
     String[](RequestAnalyzer) getMultivaluedStringParameterExtractor(String parameterName, ParamType parameterType)
@@ -347,31 +587,32 @@ shared class RESTServer()
         }
     }
 
-    Object?(RequestAnalyzer) buildEntityExtractor(String parameterName, Type<> _type)
+    BodyParameterStuff buildEntityExtractor(String parameterName, Type<Object?> _type)
     {
         value x = (RequestAnalyzer requestAnalyzer)
         {
             String? contentType = requestAnalyzer.contentType;
             if (is Null contentType) {
-                throw Exception("no content type given");
+                return BodyNoConverterError(null);
             }
 
             value contentTypeHandler = contentTypeHandlers.get(contentType);
             if (is Null contentTypeHandler) {
-                throw Exception("no content type converter for ``contentType``");
+                return BodyNoConverterError(contentType, _type);
             }
 
             value converted = contentTypeHandler.convertEntity(requestAnalyzer.body, _type);
             return converted;
         };
-        return x;
+        return BodyParameterStuff(parameterName, _type, x);
     }
 }
 
-class ArgumentsCreator(consumes, argumentCreators)
+class ArgumentsCreator(consumes, argumentCreators, me)
 {
     shared String consumes;
     shared Anything(RequestAnalyzer)[] argumentCreators;
+    shared PathItem me;
 }
 
 class PathAndMethod(shared String path, shared HttpMethod method)
@@ -396,19 +637,36 @@ shared class RequestConversionError(errors)
 
 shared abstract class ContentTypeHandler<out Entity>(shared String contentType)
 {
-    shared formal Entity convertiEntity(String body);
-    shared Entity convertEntity(String body, Type<> _type)
+    shared formal Entity|Error convertiEntity(String body);
+    shared Entity|Error convertEntity(String body, Type<> _type)
     {
-        if (_type.subtypeOf(`Entity`)) {
+        if (`Entity`.subtypeOf(_type)) {
             return convertiEntity(body);
         }
+        if (_type.subtypeOf(`Entity`)) {
+            value converted = convertiEntity(body);
+            if (is Entity converted) {
+                if (!type(converted).subtypeOf(_type)) {
+                    return BodyConversionError(contentType, body, _type, "Value turned out to be ``type(converted)`` instead of expected ``_type``");
+                }
+            }
+            return converted;
+        }
         else {
-            throw Exception("cannot convert to ``_type``");
+            return BodyNoConverterError(contentType, _type);
         }
     }
 }
 
 object jsonObjectEntityConverter extends ContentTypeHandler<JsonValue>("application/json")
 {
-    shared actual JsonValue convertiEntity(String body) => jsonParse(body);
+    shared actual JsonValue|Error convertiEntity(String body)
+    {
+        try {
+            return jsonParse(body);
+        }
+        catch (Exception e) {
+            return BodyConversionError(contentType, body, "JsonValue", e.message);
+        }
+    }
 }

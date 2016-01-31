@@ -173,13 +173,13 @@ shared class TypeConverters()
         return listConverter;
     }
 
-    shared Object?(String?)? getTypeConverterDynamically([Type<>, Boolean] type)
+    shared Object?(String?)? getTypeConverterDynamically(Type<Object?> type, Boolean nullAllowed)
     {
-        log.debug("looking up converter for detail type ``type[0]``, null ``if (type[1]) then "allowed" else "forbidden"``");
+        log.debug("looking up converter for detail type ``type``, null ``if (nullAllowed) then "allowed" else "forbidden"``");
         //value registeredConverter = converterMap.get(type[0]);
 
         value funDef = `function TypeConverters.getTypeConverter`;
-        value method = funDef.memberApply<TypeConverters, Object?(String?)?, []>(`TypeConverters`, type[0]);
+        value method = funDef.memberApply<TypeConverters, Object?(String?)?, []>(`TypeConverters`, type);
         value fun = method.bind(this);
         //log.debug("fun is ``fun``");
         value registeredConverter = fun();
@@ -189,7 +189,7 @@ shared class TypeConverters()
             return null;
         }
         
-        if (type[1]) {
+        if (nullAllowed) {
             // TODO this may not always work
             // it depends on name and presence of return value type parameter
             // may not work for subclasses of Callable without such an explicit type parameter
@@ -205,8 +205,8 @@ shared class TypeConverters()
             }
         }
         value x = (String? s)
-                => if (type[1]) then registeredConverter(s)
-                                else (registeredConverter(s) else ConversionError(null, type[0]));
+                => if (nullAllowed) then registeredConverter(s)
+                                else (registeredConverter(s) else ConversionError(null, type));
         return x;
     }
     
@@ -263,6 +263,7 @@ shared class TypeConverters()
 }
 
 shared class ConversionError(badValue, type)
+    extends Error()
 {
     shared String? badValue;
     shared Type<> type;
@@ -273,6 +274,7 @@ shared class ConversionError(badValue, type)
 }
 
 shared class ListConversionError(badValues, type)
+    extends Error()
 {
     shared Map<Integer, String?> badValues;
     shared Type<> type;
@@ -302,6 +304,7 @@ shared class ListConversionError(badValues, type)
 }
 
 shared class NamedConversionError(name, source, conversionError)
+    extends Error()
 {
     shared String name;
     shared ParamType source;
@@ -317,3 +320,33 @@ shared class NamedConversionError(name, source, conversionError)
         }
     }
 }
+
+shared class BodyNoConverterError(contentType, type = null)
+    extends Error()
+{
+	shared String? contentType;
+	<Type<>|String>? type;
+	
+	if (is Null type) {
+		assert (is Null contentType);
+	}
+	
+	shared actual String string 
+	   => if (is String contentType)
+	       then "No converter found to convert ``contentType`` to ``type?.string else "*"``"
+	       else "No Content-Type header given";
+}
+
+shared class BodyConversionError(contentType, entity, type, message)
+    extends Error()
+{
+	shared String contentType;
+	shared String entity;
+	shared Type<>|String type;
+	shared String message;
+	
+	shared actual String string
+	    => "Failed to convert body of type ``contentType`` to ``type``: ``message``";
+}
+
+shared class Error(){}

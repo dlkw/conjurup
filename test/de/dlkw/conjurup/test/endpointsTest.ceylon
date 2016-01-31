@@ -1,3 +1,8 @@
+import ceylon.json {
+	JsonValue = Value,
+	JsonObject=Object,
+	JsonArray=Array
+}
 import ceylon.logging {
 	addLogWriter,
 	writeSimpleLog
@@ -6,19 +11,29 @@ import ceylon.math.decimal {
 	Decimal
 }
 import ceylon.net.http {
-	get
+	get,
+	post
 }
 import ceylon.test {
 	test,
 	beforeTest
 }
+import ceylon.time {
+	Date
+}
+import ceylon.time.iso8601 {
+	parseDate
+}
 
 import de.dlkw.conjurup {
 	RESTServer,
-	ConversionError
+	ConversionError,
+	form,
+	nullPropagationConverter
 }
 import de.dlkw.conjurup.annotations {
-	param
+	param,
+	consumes
 }
 
 beforeTest
@@ -27,23 +42,34 @@ void installLog() {
 }
 
 test
-void endpointsTest() {
+shared void endpointsTest() {
 	value restServer = RESTServer();
 	
-//	restServer.addEndpoint("f1", get, `fun1`);
-//	restServer.addEndpoint("f2", get, `fun2`);
-//	restServer.addEndpoint("f3", get, `fun3`);
-//	restServer.addEndpoint("f4", get, `fun4`);
-//	restServer.addEndpoint("f5", get, `fun5`);
-//	restServer.addEndpoint("f6", get, `fun6`);
-//	
+	restServer.addEndpoint("f1", get, `fun1`);
+	restServer.addEndpoint("f2", get, `fun2`);
+	restServer.addEndpoint("f3", get, `fun3`);
+	restServer.addEndpoint("f4", get, `fun4`);
+	restServer.addEndpoint("f5", get, `fun5`);
+	restServer.addEndpoint("f6", get, `fun6`);
+
 //	restServer.registerTypeConverter(nullPropagationConverter(parseDecimal));
 //	restServer.addEndpoint("f7", get, `fun7`);
-//	
-//	restServer.addEndpoint("f8", get, `fun8`);
-//
-//	restServer.addEndpoint("fl1", get, `funl1`);
-//	restServer.addEndpoint("fl2", get, `funl2`);
+	
+	restServer.addEndpoint("f8", get, `fun8`);
+
+	restServer.addEndpoint("f9", get, `fun9`);
+	restServer.addEndpoint("f9a", post, `fun9a`);
+	restServer.addEndpoint("f10", get, `fun10`);
+	
+	restServer.registerTypeConverter(nullPropagationConverter(parseDate));
+	restServer.addEndpoint("dateFun", get, `fun11`);
+
+	restServer.addEndpoint("f12", post, `fun12`);
+	restServer.addEndpoint("f13", get, `fun13`);
+	restServer.addEndpoint("f14", post, `fun14`);
+	
+	restServer.addEndpoint("fl1", get, `funl1`);
+	restServer.addEndpoint("fl2", get, `funl2`);
 	
 	restServer.registerTypeConverter<Integer>((String? s)
 	{
@@ -65,34 +91,34 @@ void endpointsTest() {
 	restServer.start();
 }
 
-String fun1(param String arg0) {
-	return "*" + arg0;
+String fun1(param String mandS) {
+	return "*" + mandS;
 }
 
-String fun2(param String? arg0) {
-	return "*" + (arg0 else "**");
+String fun2(param String? optS) {
+	return "*" + (optS else "**");
 }
 
-String fun3(param Integer arg0) {
-	return "#``arg0 + 1``";
+String fun3(param Integer mandI) {
+	return "#``mandI + 1``";
 }
 
-String fun4(param Integer? arg0) {
-	if (exists arg0) {
-		return "#``arg0 + 1``";
+String fun4(param Integer? optI) {
+	if (exists optI) {
+		return "#``optI + 1``";
 	}
 	else {
 		return "***";
 	}
 }
 
-String fun5(param Boolean arg0) {
-	return "#``!arg0``";
+String fun5(param Boolean mandB) {
+	return "#``!mandB``";
 }
 
-String fun6(param Boolean? arg0) {
-	if (exists arg0) {
-		return "#``!arg0``";
+String fun6(param Boolean? optB) {
+	if (exists optB) {
+		return "#``!optB``";
 	}
 	else {
 		return "***";
@@ -103,16 +129,55 @@ String fun7(param Decimal arg0) {
 	return "##``arg0``";
 }
 
-String fun8(param Integer a, param Integer b) {
-	return "``a + b``";
+String fun8(param Integer mandIa, param Integer mandIb) {
+	return "``mandIa + mandIb``";
 }
 
-String funl1(param String[] a) {
-	return a.reduce<String>((s, t) => t + s) else "##null";
+String fun9(param(form, "u") String s) {
+	return "->``s``<-";
 }
 
-String funl2(param String?[] a) {
-	return a.reduce<String>((s, t) => (t else "<N1>") + (s else "<N2>")) else "##null";
+Float fun9a(param(form, "x") Float mandF) {
+	return mandF / 3;
+}
+
+consumes("application/json")
+String fun10(String s) {
+	return "->``s``<-";
+}
+
+String fun11(param Date date) {
+	return date.plusWeeks(3).string;
+}
+
+JsonObject fun12(param String?[] input) {
+	value result = JsonObject {
+		"in" -> JsonArray(input),
+		"out" -> "ok"
+	};
+	return result;
+}
+
+consumes("application/json")
+JsonValue fun13(JsonObject input) {
+	value result = JsonObject {
+		"in" -> input,
+		"out" -> "ok"
+	};
+	return result;
+}
+
+consumes("application/json")
+String fun14(JsonValue s) {
+	return "->``s else "json null"``<-";
+}
+
+String funl1(param String[] mandSL) {
+	return mandSL.reduce<String>((s, t) => t + s) else "##null";
+}
+
+String funl2(param String?[] optSL) {
+	return optSL.reduce<String>((s, t) => (t else "<N1>") + (s else "<N2>")) else "##null";
 }
 
 String funl3(param Integer[] a) {

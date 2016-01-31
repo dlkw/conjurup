@@ -7,32 +7,32 @@ import ceylon.language.meta.model {
 
 TypeConverters tc = TypeConverters();
 
-[ClassOrInterface<Anything>, Boolean] determineDetailType(Type<> _type)
+[ClassOrInterface<Object>, Type<Object?>, Boolean] determineNullability(Type<Object?> _type)
 {
-    if (is UnionType<> _type) {
+    if (is UnionType<Object?> _type) {
         log.debug("union of ``_type.caseTypes``");
-        variable Class<>? tt = null;
+        variable Class<Object>? tt = null;
         variable Boolean nonNullFound = false;
         for (t in _type.caseTypes) {
-            if (is Class<> t) {
-                if (t != `Null`) {
-                    if (nonNullFound) {
-                        throw Exception("only union of class with Null supported");
-                    }
-                    tt = t;
-                    nonNullFound = true;
+            if (is Class<Object> t) {
+                if (nonNullFound) {
+                    throw Exception("only union of one class with Null supported");
                 }
+                tt = t;
+                nonNullFound = true;
             }
-            else {
+            else if (!is Class<Null> t) {
                 throw Exception("only union of class with Null supported");
             }
         }
         assert (exists ttt = tt);
-        return [ttt, true];
+        value x = [ttt, _type, true];
+        return x;
     }
     else {
-        assert (is ClassOrInterface<> _type);
-        return [_type, false];
+        assert (is ClassOrInterface<Object> _type);
+        value x = [_type, _type, false]; 
+        return x;
     }
 }
 
@@ -72,12 +72,13 @@ TypeConverters tc = TypeConverters();
     };
 }
 
-shared abstract class ParamType() of path | query | header  | cookie | form {}
+shared abstract class ParamType() of path | query | header  | cookie | form | body {}
 shared object path extends ParamType() {string=>"path";}
 shared object query extends ParamType() {string=>"query";}
 shared object header extends ParamType() {string=>"header";}
 shared object cookie extends ParamType() {string=>"cookie";}
 shared object form extends ParamType() {string=>"form";}
+shared object body extends ParamType() {string=>"body";}
 
 shared {Element*} discard<Type, Element>({<Element|Type>*} input)
         => { for (el in input) if (!is Type el) el };
