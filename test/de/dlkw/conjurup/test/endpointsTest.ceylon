@@ -29,7 +29,9 @@ import de.dlkw.conjurup {
 	RESTServer,
 	ConversionError,
 	form,
-	nullPropagationConverter
+	nullPropagationConverter,
+	query,
+	header
 }
 import de.dlkw.conjurup.annotations {
 	param,
@@ -186,4 +188,10 @@ String funl3(param Integer[] a) {
 
 String funl4(param Integer?[] a) {
 	return a.reduce<Integer>((s, t) => (t else 0) + (s else 0))?.string else "##null";
+}
+
+Integer funl5(param Integer aValue, param(header, "X-Val") Integer? otherValue, param Integer[] moreValues) {
+	return aValue
+			+ (otherValue else 0)
+	        + (moreValues.reduce<Integer>((s, t) => s + t) else 0);
 }

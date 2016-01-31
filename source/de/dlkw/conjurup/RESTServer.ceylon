@@ -50,7 +50,7 @@ import de.dlkw.conjurup.annotations {
 }
 import de.dlkw.conjurup.swagger {
 	PathItem,
-	swagger,
+	mkSwagger=swagger,
 	Path,
 	Parameter,
 	PIT,
@@ -90,7 +90,7 @@ shared class RESTServer()
         }
     }
 
-	String mkSwagger()
+	shared JsonObject swagger
 	{
 		value pM = HashMap<String, ArrayList<PathItem>>();
 		
@@ -214,15 +214,15 @@ shared class RESTServer()
 
 		value eps = pM.map((a) => Path("/"+a.key, a.item.sequence()));
 		
-		value swaggerJ = swagger("detitl", "1.2.3", eps, "blafasel");
-		return swaggerJ.string;
+		value swaggerJ = mkSwagger("detitl", "1.2.3", eps, "blafasel");
+		return swaggerJ;
 	}
 	
     "Starts this server in the current thread. This method will not return before the server is stopped."
     shared void start()
     {
         summarize();
-        log.info(mkSwagger());
+        log.info(swagger.string);
         httpServer.start();
     }
 
