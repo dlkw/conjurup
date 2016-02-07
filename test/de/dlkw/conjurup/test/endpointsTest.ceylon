@@ -35,7 +35,9 @@ import de.dlkw.conjurup {
 }
 import de.dlkw.conjurup.annotations {
 	param,
-	consumes
+	consumes,
+    path,
+    resourceAccessor
 }
 
 beforeTest
@@ -44,9 +46,26 @@ void installLog() {
 }
 
 test
+shared void methodsTest() {
+    value restServer = RESTServer();
+
+    restServer.addEndpoint("f1", get, `fun1`);
+    restServer.addEndpoint("f1", post, `fun1`);
+    restServer.addEndpoint("f2", get, `fun1`);
+    restServer.addEndpoint("f2", post, `fun2`);
+    restServer.addEndpoint("f3", get, `fun2`);
+    restServer.addEndpoint("f3", post, `fun2`);
+
+    Res res = Res("hhh");
+    restServer.addResourceAccessor(res);
+
+    restServer.start();
+}
+
+test
 shared void endpointsTest() {
 	value restServer = RESTServer();
-	
+
 	restServer.addEndpoint("f1", get, `fun1`);
 	restServer.addEndpoint("f2", get, `fun2`);
 	restServer.addEndpoint("f3", get, `fun3`);
@@ -56,23 +75,24 @@ shared void endpointsTest() {
 
 //	restServer.registerTypeConverter(nullPropagationConverter(parseDecimal));
 //	restServer.addEndpoint("f7", get, `fun7`);
-	
+
 	restServer.addEndpoint("f8", get, `fun8`);
 
 	restServer.addEndpoint("f9", get, `fun9`);
 	restServer.addEndpoint("f9a", post, `fun9a`);
 	restServer.addEndpoint("f10", get, `fun10`);
-	
+
 	restServer.registerTypeConverter(nullPropagationConverter(parseDate));
 	restServer.addEndpoint("dateFun", get, `fun11`);
 
 	restServer.addEndpoint("f12", post, `fun12`);
 	restServer.addEndpoint("f13", get, `fun13`);
 	restServer.addEndpoint("f14", post, `fun14`);
-	
+
 	restServer.addEndpoint("fl1", get, `funl1`);
+	restServer.addEndpoint("fl1", post, `funl1`);
 	restServer.addEndpoint("fl2", get, `funl2`);
-	
+
 	restServer.registerTypeConverter<Integer>((String? s)
 	{
 		if (is Null s) {
@@ -194,4 +214,26 @@ Integer funl5(param Integer aValue, param(header, "X-Val") Integer? otherValue, 
 	return aValue
 			+ (otherValue else 0)
 	        + (moreValues.reduce<Integer>((s, t) => s + t) else 0);
+}
+
+path("/o")
+class Res(String head)
+{
+    resourceAccessor{path="f3";}
+    shared String x1(String b)
+    {
+        return head + "-" + b;
+    }
+
+    resourceAccessor{path="f2";method=get;}
+    String x2(param String c)
+    {
+        return head + "+" + c + " (got)";
+    }
+
+    resourceAccessor{path="f2";method=post;}
+    String x3(param String c)
+    {
+        return head + "+" + c + " (posted)";
+    }
 }

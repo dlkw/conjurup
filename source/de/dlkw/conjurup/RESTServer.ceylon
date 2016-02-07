@@ -1,70 +1,89 @@
 import ceylon.collection {
-	HashMap,
-	ArrayList
+    HashMap,
+    ArrayList,
+    MutableList,
+    MutableMap
+}
+import ceylon.io.charset {
+    utf8
 }
 import ceylon.json {
-	JsonValue=Value,
-	JsonObject=Object,
-	JsonArray=Array,
-	jsonParse=parse
+    JsonValue=Value,
+    JsonObject=Object,
+    JsonArray=Array,
+    jsonParse=parse
 }
 import ceylon.language.meta {
-	type,
-	annotations
+    type,
+    annotations
 }
 import ceylon.language.meta.declaration {
-	FunctionDeclaration,
-	ValueDeclaration
+    FunctionDeclaration,
+    ValueDeclaration
 }
 import ceylon.language.meta.model {
-	Function,
-	Interface,
-	Type
+    Function,
+    Interface,
+    Type
 }
 import ceylon.logging {
-	Logger,
-	logger,
-	trace
+    Logger,
+    logger,
+    trace
 }
 import ceylon.net.http {
-	HttpMethod=Method,
-	contentTypeFormUrlEncoded,
-	Header
+    HttpMethod=Method,
+    contentTypeFormUrlEncoded,
+    Header
 }
 import ceylon.net.http.server {
-	Server,
-	newServer,
-	Request,
-	Response,
-	TemplateEndpoint
+    Server,
+    newServer,
+    Request,
+    Response,
+    TemplateEndpoint
+}
+import ceylon.time {
+    Date
 }
 
 import de.dlkw.conjurup {
-	BodyParameterStuff
+    BodyParameterStuff
 }
 import de.dlkw.conjurup.annotations {
-	ResourceAccessorAnnotation,
-	PathAnnotation,
-	ParamAnnotation,
-	ConsumesAnnotation
+    ResourceAccessorAnnotation,
+    PathAnnotation,
+    ParamAnnotation,
+    ConsumesAnnotation
 }
 import de.dlkw.conjurup.swagger {
-	PathItem,
-	mkSwagger=swagger,
-	Path,
-	Parameter,
-	PIT,
-	BP,
-	ParameterLocation
-}
-import ceylon.io.charset {
-	utf8
-}
-import ceylon.time {
-	Date
+    PathItem,
+    mkSwagger=swagger,
+    Path,
+    Parameter,
+    PIT,
+    BP,
+    ParameterLocation
 }
 
 Logger log = logger(`package de.dlkw.conjurup`);
+
+shared class PathAndMethodClashException([String+] messages)
+    extends Exception()
+{
+    String calcMessageString()
+    {
+        if (messages.shorterThan(2)) {
+            return messages.first;
+        }
+        variable String msg = "The following clashes have been found:";
+        for (m in messages) {
+            msg = msg + "\n\t" + m;
+        }
+        return msg;
+    }
+    shared actual String message = calcMessageString();
+}
 
 shared class RESTServer()
 {
@@ -77,23 +96,78 @@ shared class RESTServer()
         contentTypeHandlers.put(contentTypeHandler.contentType, contentTypeHandler);
     }
     registerContentTypeHandler(jsonObjectEntityConverter);
-    
+
+
     // make overridable/configurable
     ResponseConverter responseConverter = stdResponseConverter;
-    
-    value pathMap = HashMap<PathAndMethod, FunctionStuff>();
-    
-    void summarize()
+
+    value pathMap = HashMap<String, MutableMap<HttpMethod, FunctionStuff>>();
+    value functionMapX = HashMap<Anything(Nothing), HashMap<String, MutableList<HttpMethod>>>();
+    // not thread safe!
+
+    void assertAllAbsent(Map<String, Map<HttpMethod, FunctionStuff>> newValues,
+            Map<String, Map<HttpMethod, FunctionStuff>> store)
     {
-        for (p->m in pathMap) {
-            log.info("``p``: ``m.functionName``");
+        variable String[] errs = [];
+        for (path -> newMethodMap in newValues) {
+            if (exists storedMethodMap = store.get(path)) {
+                for (newMethod -> newFunction in newMethodMap) {
+                    for (storedMethod -> storedFunction in storedMethodMap) {
+                        if (newMethod == storedMethod) {
+                            errs = errs.withTrailing("Duplicate ``newMethod`` ``path`` for ``newFunction.functionName`` clashes with ``storedFunction.functionName``.");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (nonempty e = errs) {
+            throw PathAndMethodClashException(e);
         }
     }
 
-	shared JsonObject swagger
+    void assertAbsentThenPut(Map<String, Map<HttpMethod, FunctionStuff>> newValues,
+            MutableMap<String, MutableMap<HttpMethod, FunctionStuff>> store)
+    {
+        assertAllAbsent(newValues, store);
+
+        for (path -> newMethodMap in newValues) {
+            MutableMap<HttpMethod, FunctionStuff> storedMethodMap;
+            if (exists sMM = store.get(path)) {
+                storedMethodMap = sMM;
+            }
+            else {
+                storedMethodMap = HashMap<HttpMethod, FunctionStuff>();
+                store.put(path, storedMethodMap);
+            }
+
+            for (method -> functionStuff in newMethodMap) {
+                storedMethodMap.put(method, functionStuff);
+            }
+        }
+    }
+
+    void summarize()
+    {
+        for (p->mm in pathMap) {
+            for (m->f in mm) {
+                log.info("``m`` ``p``: ``f.functionName``");
+            }
+        }
+    }
+
+	shared JsonObject swagger(
+		"The title of the application."
+        String title,
+
+	    "The version of the API."
+	    String version,
+
+	    "A description of the application."
+	    String? description = null)
 	{
 		value pM = HashMap<String, ArrayList<PathItem>>();
-		
+
 		PIT mkPit(SimpleParameterStuff ps)
 		{
 			String type;
@@ -150,7 +224,7 @@ shared class RESTServer()
 					throw AssertionError("unhandled parameter type ``ps.type``");
 				}
 			}
-			
+
 			ParameterLocation location;
 			switch (ps.source)
 			case (query) {
@@ -174,7 +248,7 @@ shared class RESTServer()
 				null, type, format, true, pit, !ps.nullAllowed);
 			return p;
 		}
-		
+
 		PathItem mkME(HttpMethod method, FunctionStuff fs)
 		{
 			variable Parameter[] pp = [];
@@ -198,31 +272,50 @@ shared class RESTServer()
 			PathItem me = PathItem(method, [fs.consumes], pp, bp, fs.response.type);
 			return me;
 		}
-		
-		for (pm -> ifs in pathMap) {
-			ArrayList<PathItem> ls;
-			ArrayList<PathItem>? mes = pM[pm.path];
-			if (is Null mes) {
-				ls = ArrayList<PathItem>();
-				pM.put(pm.path, ls);
-			}
-			else {
-				ls = mes;
-			}
-			ls.add(mkME(pm.method, ifs));
+
+		for (p -> mm in pathMap) {
+			for (m->ifs in mm) {
+    			ArrayList<PathItem> ls;
+    			ArrayList<PathItem>? mes = pM[p];
+    			if (is Null mes) {
+    				ls = ArrayList<PathItem>();
+    				pM.put(p, ls);
+    			}
+    			else {
+    				ls = mes;
+    			}
+    			ls.add(mkME(m, ifs));
+            }
 		}
 
 		value eps = pM.map((a) => Path("/"+a.key, a.item.sequence()));
-		
-		value swaggerJ = mkSwagger("detitl", "1.2.3", eps, "blafasel");
+
+		value swaggerJ = mkSwagger(title, version, eps, description);
 		return swaggerJ;
 	}
-	
+
     "Starts this server in the current thread. This method will not return before the server is stopped."
     shared void start()
     {
+        for (path->methodMap in pathMap) {
+            TemplateEndpoint endpoint = TemplateEndpoint {
+                pathTemplate => path;
+                acceptMethod => methodMap.keys;
+                service => (Request rq, Response rp)
+                {
+                    if (exists functionStuff = methodMap.get(rq.method)) {
+                        functionStuff.service(rq, rp);
+                    }
+                    else {
+                        rp.responseStatus = 405;
+                    }
+                };
+            };
+            httpServer.addEndpoint(endpoint);
+        }
+
         summarize();
-        log.info(swagger.string);
+        log.info(swagger("The glorious title of this incredible application", "1.0.0", "This example should illustrate a bit setting up a RESTful API and generating its Swagger description.").string);
         httpServer.start();
     }
 
@@ -232,35 +325,17 @@ shared class RESTServer()
         String path;
         HttpMethod method;
         Function<Anything, Nothing> annotatedFunction;
-        
-        value functionStuff = doAddEndpoint(path, method, annotatedFunction);
 
-		assertAbsentThenPut(path, functionStuff);
+        String canonicalizedPath = canonicalizePathComponent(path);
 
-        TemplateEndpoint endpoint = TemplateEndpoint(path, functionStuff.service, { method });
-        httpServer.addEndpoint(endpoint);
+        value functionStuff = doAddEndpoint(canonicalizedPath, annotatedFunction);
+
+		assertAbsentThenPut(map({canonicalizedPath -> map({method -> functionStuff})}), pathMap);
     }
-    
-    // not thread safe!
-    void assertAbsentThenPut(path, functionStuffs)
+
+    FunctionStuff doAddEndpoint(path, annotatedFunction)
     {
         String path;
-        FunctionStuff* functionStuffs;
-        
-        for (f in functionStuffs) {
-            if (exists c = pathMap.get(PathAndMethod(path, f.method))) {
-                throw AssertionError("duplicate ``f.method`` ``path`` in ``f.functionName`` clashes with ``c.functionName``");
-            }
-        }
-        for (f in functionStuffs) {
-            pathMap.put(PathAndMethod(path, f.method), f);
-        }
-    }
-    
-    FunctionStuff doAddEndpoint(path, method, annotatedFunction)
-    {
-        String path;
-        HttpMethod method;
         Function<Anything, Nothing> annotatedFunction;
 
         value [consumes, argumentCreators, response] = buildArgumentCreators(annotatedFunction, path);
@@ -325,7 +400,7 @@ shared class RESTServer()
             }
         };
 
-        value functionStuff = FunctionStuff(annotatedFunction.string, method, consumes, argumentCreators, service, response);
+        value functionStuff = FunctionStuff(annotatedFunction.string, consumes, argumentCreators, service, response);
 
 		return functionStuff;
     }
@@ -334,13 +409,20 @@ shared class RESTServer()
     {
         value scanInfo = scanObject(obj);
 
-        for (pathAndMethod -> fun in scanInfo) {
-            addEndpoint(pathAndMethod.path, pathAndMethod.method, fun);
+        value endpointsMap = HashMap<String, MutableMap<HttpMethod, FunctionStuff>>();
+        for (path -> httpMethodEntries in scanInfo) {
+            value httpMethodEntries2 = HashMap<HttpMethod, FunctionStuff>();
+            endpointsMap.put(path, httpMethodEntries2);
+            for (method -> fun in httpMethodEntries) {
+                value functionStuff = doAddEndpoint(path, fun);
+                httpMethodEntries2.put(method, functionStuff);
+            }
         }
+        assertAbsentThenPut(endpointsMap, pathMap);
     }
 
     "Scans an object for annotations to use (some of) its methods as REST resource accessors."
-    Map<PathAndMethod, Function<Object, Object?[]>> scanObject(Object resource)
+    Map<String, Map<HttpMethod, Function<Object, Nothing>>> scanObject(Object resource)
     {
         value classModel = type(resource);
         value classDeclaration = classModel.declaration;
@@ -356,16 +438,27 @@ shared class RESTServer()
             String rootPath = canonicalizePathComponent(pathAnnotation.ppath);
             log.debug("root path ``rootPath`` for ``classModel``");
 
-            value resultMap = HashMap<PathAndMethod, Function<Object, Object?[]>>();
+            value resultMap = HashMap<String, MutableMap<HttpMethod, Function<Object, Nothing>>>();
 
-            value methods = classModel.getDeclaredMethods<Nothing, Object, Object?[]>(`ResourceAccessorAnnotation`);
+            value annotatedMethods = classModel.getDeclaredMethods<Nothing, Object, Nothing>(`ResourceAccessorAnnotation`);
+            if (!nonempty annotatedMethods) {
+                throw Exception("no method annotated resourceAccessor found in ``classModel``");
+            }
 
-            for (method in methods) {
+            for (method in annotatedMethods) {
                 value functionDeclaration = method.declaration;
                 value pathAndMethod = pathForAccessor(functionDeclaration, rootPath);
                 value boundMethod = method.bind(resource);
 
-                if (exists fun = resultMap.put(pathAndMethod, boundMethod)) {
+                MutableMap<HttpMethod, Function<Object, Nothing>> httpMethodEntries;
+                if (exists hME = resultMap.get(pathAndMethod.path)) {
+                    httpMethodEntries = hME;
+                }
+                else {
+                    httpMethodEntries = HashMap<HttpMethod, Function<Object, Nothing>>();
+                    resultMap.put(pathAndMethod.path, httpMethodEntries);
+                }
+                if (exists fun = httpMethodEntries.put(pathAndMethod.method, boundMethod)) {
                     throw AssertionError("duplicate ``pathAndMethod.method`` ``pathAndMethod.path`` in ``boundMethod`` clashes with ``fun``");
                 }
             }
@@ -383,9 +476,25 @@ shared class RESTServer()
 
     PathAndMethod pathForAccessor(FunctionDeclaration functionDeclaration, String rootPath)
     {
-        return nothing;
+        if (nonempty a = functionDeclaration.typeParameterDeclarations) {
+            throw Exception("methods with type parameters not supported: ``functionDeclaration``");
+        }
+
+        value annotations = functionDeclaration.annotations<ResourceAccessorAnnotation>();
+        // nonempty because method was found through annotation
+        assert (nonempty annotations);
+
+        // cannot have more than one
+        ResourceAccessorAnnotation ann = annotations.first;
+
+        String pathComponent = canonicalizePathComponent(ann.path);
+        log.debug("path component ``pathComponent`` for resource accessor ``functionDeclaration``.");
+        String path = rootPath == "/" then pathComponent else rootPath + pathComponent;
+
+        value pathAndMethod = PathAndMethod(path, ann.method);
+        return pathAndMethod;
     }
-    
+
     shared void registerTypeConverter<Result>(<Result?|ConversionError>(String?) converter)
             given Result satisfies Object
     {
@@ -483,7 +592,7 @@ shared class RESTServer()
 			value x = typeArgList.first;
 			assert (is Type<Object?> x);
             value [nonNullDetailType, detailType, nullAllowed] = determineNullability(x);
-            
+
             <Object?[]|ListConversionError>({String*})? listTypeConverter;
             if (nullAllowed) {
                 listTypeConverter = tc.getListTypeConverterDynamicallyN(nonNullDetailType);
@@ -510,7 +619,7 @@ shared class RESTServer()
             if (is Null typeConverter) {
                 throw Exception("no converter found for ``nonNullDetailType``");
             }
-            
+
             if (nullAllowed) {
                 // TODO this may not always work
                 // it depends on name and presence of return value type parameter
@@ -527,10 +636,10 @@ shared class RESTServer()
                 }
             }
 
-            
+
             value decorated = converterDecorated(typeConverter, parameterName, paramType);
             value parameterConverter = compose(decorated, singlevaluedStringParameterExtractor);
-            
+
             value result = SimpleParameterStuff(parameterName, paramType, nonNullDetailType, false, nullAllowed, parameterConverter);
             return result;
         }
