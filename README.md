@@ -86,7 +86,10 @@ Create an instance of RESTServer and add the functions you wish to make availabl
 import de.dlkw.conjurup {
     RESTServer
 }
-	
+import ceylon.net.http {
+    get
+}
+
 shared void run() {
 	value restServer = RESTServer();
 	
