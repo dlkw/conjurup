@@ -1,4 +1,4 @@
-# Conjurup a server for RESTful APIs
+# Conjurup a server for RESTful APIs!
 
 This is a little framework for serving RESTful APIs written in and to be used
 with the Ceylon programming language and SDK.
@@ -18,8 +18,9 @@ query parameters)
 ## Supported features
 
 * adding endpoints by specifying path, HTTP method and a function
-  (at the moment there may only be one HTTP method at the same URL
-  path)
+
+* scanning an instance of a class for annotated methods and adding them
+as endpoints
 
 - Mandatory or optional query, form, path and header parameters of the
 following types:
@@ -29,7 +30,7 @@ following types:
     * `Boolean` or `Boolean?`
 
 * Lists (`Iterable`, `List`, `Sequential`) of above types as parameters, except path, of course.
- (This was the most work as a Ceylon beginner, but fun to learn.)
+ (This was the most work as a Ceylon beginner, but fun to explore.)
 
 * Easy extensibility of type converters to support further types
   (`ceylon.math.Decimal`, `ceylon.time.Date`, `UUID`...) as simple parameters
