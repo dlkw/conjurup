@@ -51,7 +51,7 @@ import de.dlkw.conjurup {
     BodyParameterStuff
 }
 import de.dlkw.conjurup.annotations {
-    ResourceAccessorAnnotation,
+    ResourceAccessAnnotation,
     PathAnnotation,
     ParamAnnotation,
     ConsumesAnnotation
@@ -440,7 +440,7 @@ shared class RESTServer()
 
             value resultMap = HashMap<String, MutableMap<HttpMethod, Function<Object, Nothing>>>();
 
-            value annotatedMethods = classModel.getDeclaredMethods<Nothing, Object, Nothing>(`ResourceAccessorAnnotation`);
+            value annotatedMethods = classModel.getDeclaredMethods<Nothing, Object, Nothing>(`ResourceAccessAnnotation`);
             if (!nonempty annotatedMethods) {
                 throw Exception("no method annotated resourceAccessor found in ``classModel``");
             }
@@ -480,12 +480,12 @@ shared class RESTServer()
             throw Exception("methods with type parameters not supported: ``functionDeclaration``");
         }
 
-        value annotations = functionDeclaration.annotations<ResourceAccessorAnnotation>();
+        value annotations = functionDeclaration.annotations<ResourceAccessAnnotation>();
         // nonempty because method was found through annotation
         assert (nonempty annotations);
 
         // cannot have more than one
-        ResourceAccessorAnnotation ann = annotations.first;
+        ResourceAccessAnnotation ann = annotations.first;
 
         String pathComponent = canonicalizePathComponent(ann.path);
         log.debug("path component ``pathComponent`` for resource accessor ``functionDeclaration``.");

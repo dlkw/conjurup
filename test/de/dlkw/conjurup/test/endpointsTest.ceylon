@@ -37,7 +37,7 @@ import de.dlkw.conjurup.annotations {
 	param,
 	consumes,
     path,
-    resourceAccessor
+    resourceAccess
 }
 
 beforeTest
@@ -56,7 +56,7 @@ shared void methodsTest() {
     restServer.addEndpoint("f3", get, `fun2`);
     restServer.addEndpoint("f3", post, `fun2`);
 
-    Res res = Res("hhh");
+    Accessor res = Accessor("hhh");
     restServer.addResourceAccessor(res);
 
     restServer.start();
@@ -217,22 +217,22 @@ Integer funl5(param Integer aValue, param(header, "X-Val") Integer? otherValue, 
 }
 
 path("/o")
-class Res(String head)
+class Accessor(String head)
 {
-    resourceAccessor{path="f3";}
+    resourceAccess{path="f3";}
     shared String x1(String b)
     {
         return head + "-" + b;
     }
 
-    resourceAccessor{path="f2";method=get;}
+    resourceAccess{path="f2";method=get;}
     String x2(param String c)
     {
         return head + "+" + c + " (got)";
     }
 
-    resourceAccessor{path="f2";method=post;}
-    String x3(param String c)
+    resourceAccess{path="f2";method=post;}
+    String x3(param(form) String c)
     {
         return head + "+" + c + " (posted)";
     }
