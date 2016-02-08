@@ -44,26 +44,28 @@ class BodyParameterStuff(String name, Type<Object?> type, argumentCreator)
 
 class ResponseStuff(shared Type<> type)
 {
-	
+
 }
 
-class FunctionStuff(functionName, method, consumes, parameters, service, response)
+class FunctionStuff(functionName, consumes, parameters, service, response)
 {
 	shared String functionName;
-	shared Method method;
-	
+
 	// TODO support several content types to consume
 	shared String consumes;
-	
+
 	shared ParameterStuff[] parameters;
 	shared ResponseStuff response;
 	shared Anything(Request, Response) service;
 }
 
-class EndpointStuff(path, functionStuff)
+class EndpointStuff(functionStuff, path, methods)
 {
 	String path;
+	Method* methods;
 	FunctionStuff functionStuff;
+
+	shared Anything(Request, Response) service => functionStuff.service;
 }
 
 class ServerStuff()

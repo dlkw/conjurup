@@ -1,4 +1,4 @@
-# Conjurup a server for RESTful APIs
+# Conjurup a server for RESTful APIs!
 
 This is a little framework for serving RESTful APIs written in and to be used
 with the Ceylon programming language and SDK.
@@ -18,8 +18,9 @@ query parameters)
 ## Supported features
 
 * adding endpoints by specifying path, HTTP method and a function
-  (at the moment there may only be one HTTP method at the same URL
-  path)
+
+* scanning an instance of a class for annotated methods and adding them
+as endpoints
 
 - Mandatory or optional query, form, path and header parameters of the
 following types:
@@ -29,7 +30,7 @@ following types:
     * `Boolean` or `Boolean?`
 
 * Lists (`Iterable`, `List`, `Sequential`) of above types as parameters, except path, of course.
- (This was the most work as a Ceylon beginner, but fun to learn.)
+ (This was the most work as a Ceylon beginner, but fun to explore.)
 
 * Easy extensibility of type converters to support further types
   (`ceylon.math.Decimal`, `ceylon.time.Date`, `UUID`...) as simple parameters
@@ -64,10 +65,29 @@ The functions you wish to make available via RESTful API may be toplevel functio
 methods of a class.
 
 ```ceylon
-Integer addAll(param Integer aValue, param(header, "X-Val") Integer? otherValue, param Integer[] moreValues) {
-	return aValue
-			+ (otherValue else 0)
-	        + (moreValues.reduce<Integer>((s, t) => s + t) else 0);
+import de.dlkw.conjurup.annotations {
+    param,
+    path,
+    resourceAccess
+}
+import de.dlkw.conjurup {
+    header,
+    form}
+import ceylon.net.http {
+    post
+}
+
+Integer addAll(param Integer aValue, param(header, "X-Val") Integer? otherValue, param Integer[] moreValues)
+    => aValue
+            + (otherValue else 0)
+            + (moreValues.reduce<Integer>((s, t) => s + t) else 0);
+
+path("/prefix")
+class Accessor(String head)
+{
+    resourceAccess{path="sub";method=post;}
+    shared String x1(param(form) String b)
+        => head + "-" + b;
 }
 ```
 The `param` annotation tells conjurup to read the parameter from the query part of the URL. You can also
@@ -77,6 +97,8 @@ content type). Omitting the annotation means "take the parameter from the reques
 
 The name of the parameter is taken from the Ceylon declaration parameter name but can be overridden by
 the `name` parameter of the `param` annotation.
+
+The mandatory `path` annotation on a class defines a common URL path prefix for all endpoints from that class. Each method annotated by `resourceAccess` will be installed as an endpoint. Its `path` parameter, together with the prefix from the `path` annotation on the class, gives the path for that endpoint. The `method` parameter gives the HTTP methods that are allowed for the endpoint.
 
 ### Register the endpoints
 
@@ -94,7 +116,12 @@ shared void run() {
 	value restServer = RESTServer();
 	
 	restServer.addEndpoint("add", get, `addAll`);
-	// ... more functions
+	
+    Accessor accessor = Accessor("test");
+    restServer.addResourceAccessor(accessor);
+
+	// ... add more functions or objects
+	
 	restServer.start();
 }
 ``` 
@@ -105,9 +132,11 @@ You may not add more endpoints after the server is started.
 
 To get the Swagger definition of your API as a JSON object, call
 ```ceylon
-    Object swagger = restServer.swagger;
+    Object swagger = restServer.swagger("title", "version", "description");
 ```
 after it is started.
+
+I'm not satisfied with the annotations and their names yet; it's likely that part will change.
 
 ### Adding type decoders
 
