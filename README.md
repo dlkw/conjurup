@@ -61,7 +61,7 @@ The code is not very beautiful, but I'll clean it up a bit, I hope.
 
 ### Write some functions implementing endpoints
 
-The functions you wish to make available via RESTful API may be toplevel functions or
+The functions you wish to make available via RESTful API may be either toplevel functions or
 methods of a class.
 
 ```ceylon
@@ -77,11 +77,13 @@ import ceylon.net.http {
     post
 }
 
+"example for a toplevel function"
 Integer addAll(param Integer aValue, param(header, "X-Val") Integer? otherValue, param Integer[] moreValues)
     => aValue
             + (otherValue else 0)
             + (moreValues.reduce<Integer>((s, t) => s + t) else 0);
 
+"example for a method in a class"
 path("/prefix")
 class Accessor(String head)
 {
@@ -115,8 +117,10 @@ import ceylon.net.http {
 shared void run() {
 	value restServer = RESTServer();
 	
+	// for a toplevel function
 	restServer.addEndpoint("add", get, `addAll`);
 	
+    // for methods in a class instance
     Accessor accessor = Accessor("test");
     restServer.addResourceAccessor(accessor);
 
