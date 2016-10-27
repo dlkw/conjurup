@@ -1,99 +1,36 @@
 import ceylon.collection {
-	HashMap
-}
-import ceylon.language.meta {
-	typeLiteral,
-	closedType=type
+    HashMap
 }
 import ceylon.language.meta.model {
-	Type
+    Type
 }
-import de.dlkw.conjurup {
-	ConversionError
-}
-
-"Takes a standard converter like parseInteger and uses it to convert a String?.
- The returned converter has the following properties:
- 
- If the input to the given converter is null, null will be returned (hence the name nullPropagation).
- 
- If a non-null input is converted to null by the given converter (signalling a conversion error),
- a ConversionError instance will be returned, indicating the bogus input value and the intended Result type."
-
-shared <Result?|ConversionError>(String?) nullPropagationConverter<Result>(Result?(String) stdConverter)
-		given Result satisfies Object
-{
-	value x = (String? arg)
-	{
-		log.debug("converting ``arg else "null"`` to ``typeLiteral<Result>()``");
-		if (is Null arg) {
-			return null;
-		}
-		value converted = stdConverter(arg);
-		if (exists converted) {
-			return converted;
-		}
-		return ConversionError(arg, `Result`);
-	};
-	return x;
+import ceylon.language.meta {
+    closedType = type,
+    typeLiteral
 }
 
 shared class TypeConverters()
 {
-    value converterMap = HashMap<Type<>, <Object?|ConversionError>(String?)>();
+    value converterMap = HashMap<Type<>,<Object?|ConversionError>(String?)>();
 
     shared void putConverter<Result>(<Result?|ConversionError>(String?) converter)
-            given Result satisfies Object
+    given Result satisfies Object
     {
         log.debug("putting converter `` `Result` ``->``converter``");
-        if (typeLiteral<Result>().subtypeOf(`ConversionError`)) {
+        if (`Result`.subtypeOf(`ConversionError`)) {
             throw AssertionError("prankster!");
         }
-        converterMap.put(typeLiteral<Result>(), converter);
+        converterMap.put(`Result`, converter);
     }
 
-    putConverter(identity<String?>);
-    putConverter(nullPropagationConverter(parseInteger));
-    putConverter(nullPropagationConverter(parseFloat));
-
-    shared Boolean|ConversionError booleanConverter(String? stringValue)
-    {
-        if (is Null stringValue) {
-            return false;
-        }
-        if ({ "", "true", "1", "yes", "on" }.any(stringValue.equalsIgnoringCase)) {
-            return true;
-        }
-        if ({ "false", "0", "no", "off" }.any(stringValue.equalsIgnoringCase)) {
-            return false;
-        }
-        return ConversionError(stringValue, `Boolean`);
-    }
-    putConverter(booleanConverter);
+    putConverter(makeNullPropagationConverter(parseInteger));
 
     shared <Result?|ConversionError>(String?)? getTypeConverter<Result>()
     {
-        value q = converterMap.get(typeLiteral<Result>());
+        value q = converterMap.get(`Result`);
         assert (is <Result?|ConversionError>(String?)? q);
         return q;
-        /*
-        for (k->v in converterMap) {
-            if (k.exactly(typeLiteral<Result>())) {
-                assert (is <Result?|ConversionError>(String?) v);
-                return v;
-            }
-        }
-        return null;
-         */
     }
-
-    class Discarder<S>()
-    {
-        shared {T*} discard<T>({T|S*} input)
-            => { for (ts in input) if (!is S ts) ts };
-    }
-
-    object errorDiscarder extends Discarder<ConversionError>(){}
 
     shared <Element?[]|ListConversionError>({String*})? getListTypeConverter<Element>()
     {
@@ -102,7 +39,7 @@ shared class TypeConverters()
             return null;
         }
 
-        value listConverter = ({String*} input)
+        function listConverter({String*} input)
         {
             value allConverted = input.map(typeConverter);
             value convertedOk = errorDiscarder.discard(allConverted).sequence();
@@ -116,43 +53,31 @@ shared class TypeConverters()
                 // So, the case without conversion errors will be quicker, but if there is
                 // some conversion error, it will be slower.
                 value x = { for (i->c in allConverted.indexed) if (is ConversionError c) i->c.badValue };
-                value listError = ListConversionError(map(x), typeLiteral<Element>());
+                value listError = ListConversionError(map(x), `Element`);
                 return listError;
             }
             else {
                 return convertedOk;
             }
-        };
+        }
 
         return listConverter;
     }
-    
-    <Element|ConversionError> checkNotNull<Element>(<Element?|ConversionError> val)
-    {
-        if (is ConversionError val) {
-            return val;
-        }
-        else if (exists val) {
-            return val;
-        }
-        else {
-            return ConversionError(null, typeLiteral<Element>());
-        }
-    }
-    
+
     shared <Element[]|ListConversionError>({String*})? getListTypeConverter2<Element>()
     {
+        // get converter for list element type
         value typeConverter = getTypeConverter<Element>();
         if (is Null typeConverter) {
             return null;
         }
-        
+
         value listConverter = ({String*} input)
         {
-       		{<Element|ConversionError>*} allConverted = input.map(compose<Element|ConversionError, Element?|ConversionError, [String?]>(checkNotNull, typeConverter));
-        	
+            {<Element|ConversionError>*} allConverted = input.map(compose<Element|ConversionError, Element?|ConversionError, [String?]>(checkNotNull, typeConverter));
+
             value convertedOk = errorDiscarder.discard(allConverted).sequence();
-            
+
             // check for conversion errors
             if (input.longerThan(convertedOk.size)) {
                 // If there was a conversion error, we re-iterate, meaning we
@@ -162,14 +87,14 @@ shared class TypeConverters()
                 // So, the case without conversion errors will be quicker, but if there is
                 // some conversion error, it will be slower.
                 value x = { for (i->c in allConverted.indexed) if (is ConversionError c) i->c.badValue };
-                value listError = ListConversionError(map(x), typeLiteral<Element>());
+                value listError = ListConversionError(map(x), `Element`);
                 return listError;
             }
             else {
                 return convertedOk;
             }
         };
-        
+
         return listConverter;
     }
 
@@ -188,7 +113,7 @@ shared class TypeConverters()
         if (is Null registeredConverter) {
             return null;
         }
-        
+
         if (nullAllowed) {
             // TODO this may not always work
             // it depends on name and presence of return value type parameter
@@ -205,56 +130,39 @@ shared class TypeConverters()
             }
         }
         value x = (String? s)
-                => if (nullAllowed) then registeredConverter(s)
-                                else (registeredConverter(s) else ConversionError(null, type));
+        => if (nullAllowed) then registeredConverter(s)
+        else (registeredConverter(s) else ConversionError(null, type));
         return x;
     }
-    
-    shared <Object?[]|ListConversionError>({ String* })? getListTypeConverterDynamically([Type<>, Boolean] type)
-    {
-        log.debug("looking up converter for detail type ``type[0]``, null ``if (type[1]) then "allowed" else "forbidden"``");
-        
-        value funDef = `function TypeConverters.getListTypeConverter`;
-        value method = funDef.memberApply<TypeConverters, <Object?[]|ListConversionError>({String*})?, []>(`TypeConverters`, type[0]);
-        value fun = method.bind(this);
-        log.debug("fun is ``fun``");
-        value registeredConverter = fun();
-        log.debug("converter is ``registeredConverter else "not found"``");
-        
-        if (is Null registeredConverter) {
-            return null;
-        }
-        return registeredConverter;
-    }
-    
-    shared <Object?[]|ListConversionError>({ String* })? getListTypeConverterDynamicallyN(Type<> type)
+
+    shared <Object?[]|ListConversionError>({ String* })? getNullableListTypeConverterDynamically(Type<> type)
     {
         log.debug("looking up converter for detail type ``type``, null allowed");
-        
+
         value funDef = `function TypeConverters.getListTypeConverter`;
         value method = funDef.memberApply<TypeConverters, <Object?[]|ListConversionError>({String*})?, []>(`TypeConverters`, type);
         value fun = method.bind(this);
         log.debug("fun is ``fun``");
         value registeredConverter = fun();
         log.debug("converter is ``registeredConverter else "not found"``");
-        
+
         if (is Null registeredConverter) {
             return null;
         }
         return registeredConverter;
     }
-    
+
     shared <Object[]|ListConversionError>({ String* })? getListTypeConverterDynamicallyNN(Type<> type)
     {
         log.debug("looking up converter for detail type ``type``, null forbidden");
-        
+
         value funDef = `function TypeConverters.getListTypeConverter2`;
         value method = funDef.memberApply<TypeConverters, <Object[]|ListConversionError>({String*})?, []>(`TypeConverters`, type);
         value fun = method.bind(this);
         log.debug("fun is ``fun``");
         value registeredConverter = fun();
         log.debug("converter is ``registeredConverter else "not found"``");
-        
+
         if (is Null registeredConverter) {
             return null;
         }
@@ -262,8 +170,60 @@ shared class TypeConverters()
     }
 }
 
+<Element|ConversionError> checkNotNull<Element>(<Element?|ConversionError> val)
+{
+    if (is ConversionError val) {
+        return val;
+    }
+    else if (exists val) {
+        return val;
+    }
+    else {
+        return ConversionError(null, `Element`);
+    }
+}
+
+"Takes a standard converter like parseInteger and uses it to convert a String?.
+ The returned converter has the following properties:
+
+ If the input to the given converter is null, null will be returned (hence the name nullPropagation).
+
+ If a non-null input is converted to null by the given converter (signalling a conversion error),
+ a ConversionError instance will be returned, indicating the bogus input value and the intended Result type."
+
+shared <Result?|ConversionError>(String?) makeNullPropagationConverter<Result>(Result?(String) stdConverter)
+given Result satisfies Object
+{
+    Boolean canConvertEmpty = stdConverter("") exists;
+
+    Result?|ConversionError wrap(String? arg)
+    {
+        log.debug("converting String ``if (exists arg) then "\"``arg``\"" else "null"`` to ``typeLiteral<Result>()``");
+        if (is Null arg) {
+            return null;
+        }
+        value converted = stdConverter(arg);
+        if (exists converted) {
+            return converted;
+        }
+        if (arg.empty) {
+            return null;
+        }
+        return ConversionError(arg, `Result`);
+    }
+    return wrap;
+}
+
+class Discarder<S>()
+{
+    shared {T*} discard<T>({T|S*} input)
+            => { for (ts in input) if (!is S ts) ts };
+}
+
+object errorDiscarder extends Discarder<ConversionError>(){}
+
 shared class ConversionError(badValue, type)
-    extends Error()
+        extends Error()
 {
     shared String? badValue;
     shared Type<> type;
@@ -274,7 +234,7 @@ shared class ConversionError(badValue, type)
 }
 
 shared class ListConversionError(badValues, type)
-    extends Error()
+        extends Error()
 {
     shared Map<Integer, String?> badValues;
     shared Type<> type;
@@ -301,52 +261,6 @@ shared class ListConversionError(badValues, type)
         sb.append(" }");
         return sb.string;
     }
-}
-
-shared class NamedConversionError(name, source, conversionError)
-    extends Error()
-{
-    shared String name;
-    shared ParamType source;
-    shared ConversionError | ListConversionError conversionError;
-
-    shared actual String string
-    {
-        if (is ConversionError conversionError) {
-            return "``source`` parameter ``name`` conversion error: ``conversionError``";
-        }
-        else {
-            return "``source`` parameters ``name`` (multi-valued) conversion error: ``conversionError``";
-        }
-    }
-}
-
-shared class BodyNoConverterError(contentType, type = null)
-    extends Error()
-{
-	shared String? contentType;
-	<Type<>|String>? type;
-	
-	if (is Null type) {
-		assert (is Null contentType);
-	}
-	
-	shared actual String string 
-	   => if (is String contentType)
-	       then "No converter found to convert ``contentType`` to ``type?.string else "*"``"
-	       else "No Content-Type header given";
-}
-
-shared class BodyConversionError(contentType, entity, type, message)
-    extends Error()
-{
-	shared String contentType;
-	shared String entity;
-	shared Type<>|String type;
-	shared String message;
-	
-	shared actual String string
-	    => "Failed to convert body of type ``contentType`` to ``type``: ``message``";
 }
 
 shared class Error(){}
