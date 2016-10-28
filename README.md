@@ -74,6 +74,8 @@ The code is now a lot cleaner.
   
 ## Usage
 
+This is very few docs. Please see also the few examples in test.de.dlkw.conjurup::test01.
+
 ### Write some functions implementing endpoints
 
 The functions you wish to make available via RESTful API may be either toplevel functions or
