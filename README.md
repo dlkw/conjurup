@@ -6,6 +6,11 @@ with the Ceylon programming language and SDK.
 It is intended to run on the Java VM, since it makes use of the JVM-native
 undertow module in `ceylon.net.http`.
 
+## New:
+
+This is now adapted to ceylon.http v1.3.0, so no more patches to the SDK as in the previous
+version are needed!
+
 ## Supported features
 
 * adding endpoints by specifying path, HTTP method, consumed and produced endpoints and a function
@@ -117,26 +122,27 @@ The mandatory `path` annotation on a class defines a common URL path prefix for 
 Create an instance of RESTServer and add the functions you wish to make available, then start the server:
 
 ```ceylon
-import de.dlkw.conjurup {
-    RESTServer
+import de.dlkw.conjurup.core {
+    Server,
+    consumes
 }
-import ceylon.net.http {
+import ceylon.http.common {
     get
 }
 
 shared void run() {
-	value restServer = RESTServer();
+	value server = Server();
+	
+	// add additional converters, serializers, deserializers if needed
 	
 	// for a toplevel function
-	restServer.addEndpoint("add", get, `addAll`);
-	
-    // for methods in a class instance
-    Accessor accessor = Accessor("test");
-    restServer.addResourceAccessor(accessor);
+    consumes(["application/json"])
+    produces(["application/json"])
+	server.addEndpoint("/add", get, `addAll`);
 
 	// ... add more functions or objects
 	
-	restServer.start();
+	server.start();
 }
 ``` 
 
@@ -148,13 +154,13 @@ Swagger support will come later (hopefully).
 
 I'm not satisfied with the annotations and their names yet; it's likely that part will change.
 
-### Adding type decoders
+### Adding type converters
 
-To support more parameter types, you can register decoders. For example, to get `ceylon.time::Date` via its
+To support more parameter types, you can register converters. For example, to get `ceylon.time::Date` via its
 `parseDate` function:
 
 ```
-restServer.registerTypeConverter(nullPropagationConverter(parseDate));
+server.registerTypeConverter(nullPropagationConverter(parseDate));
 ```
 
 The `nullPropagatingConverter` is a convenience function to use "standard" Ceylon type parsing functions
@@ -163,4 +169,8 @@ see the source code for TypeConverters.booleanConverter.
 
 ### Adding request body Serializers
 
+needs to be written, see test.de.dlkw.conjurup::test01.
+
 ### Adding response body Deserializers
+
+needs to be written, see test.de.dlkw.conjurup::test01.
