@@ -5,19 +5,15 @@ with the Ceylon programming language and SDK.
 
 It is intended to run on the Java VM, since it makes use of the JVM-native
 undertow module in `ceylon.net.http`.
- 
-**Beware:** it needs two patches to ceylon-sdk that I have submitted:
 
-- [Path parameters](https://github.com/ceylon/ceylon-sdk/pull/481)
-- [Form parameters](https://github.com/ceylon/ceylon-sdk/pull/489)
+## New:
 
-(first one is to leverage undertow to get path parameters from a
-request, second one is to get form parameters from the body disregarding
-query parameters)
+This is now adapted to ceylon.http v1.3.0, so no more patches to the SDK as in the previous
+version are needed!
 
 ## Supported features
 
-* adding endpoints by specifying path, HTTP method and a function
+* adding endpoints by specifying path, HTTP method, consumed and produced endpoints and a function
 
 * scanning an instance of a class for annotated methods and adding them
 as endpoints
@@ -32,31 +28,50 @@ following types:
 * Lists (`Iterable`, `List`, `Sequential`) of above types as parameters, except path, of course.
  (This was the most work as a Ceylon beginner, but fun to explore.)
 
-* Easy extensibility of type converters to support further types
+* Easy extensibility of type converters to support further parameter types
   (`ceylon.math.Decimal`, `ceylon.time.Date`, `UUID`...) as simple parameters
-  of lists
+  or lists
 
-* request bodies of Content-Type `application/json` available as
-  `ceylon.json.Value` or subclasses
+* request bodies can be parsed from a MIME type to a Ceylon class by registering a Deserializer
+  for the class or a superclass and MIME type (included is a Deserializer for application/json to
+  ceylon.json::Value and an experimental Deserializer to all Objects using Jackson)
 
-* response bodies of Content-Type `application/json` or subclasses
+* response bodies can be written as a MIME type after registering a Serializer for the result
+  class to the MIME type (included is a Serializer for ceylon.json::Value to application/json and
+  an experimental Serializer for any Object using Jackson)
 
-* some work to register Content-Type and Ceylon type specific parsers
-  for the body parameter
+* support for different charsets in Content-Type and Accept request headers is not working yet
+  (does not matter for main use case application/json)
 
 * nice error reporting while registering functions as endpoints
-  (missing type converters, clashing paths etc) and while receiving a
+  (missing type converters, serializers, deserializers, clashing paths etc) and while receiving a
   request (all type conversion errors parsing the parameter strings are
   reported with value, type and parameter name)
 
-* As a bonus, it even supports generation of a Swagger 2.0 conforming
-  JSON structure defining the API!
+* Experimental support for generation of a Swagger 2.0 conforming
+  JSON structure defining the API will be back soon, using mbknor-jackson-jsonschema
+  for JSON schema generation
 
 I'm looking forward to integrate JSON serialization and deserialization to more specific Ceylon
-classes once there is something available.
+classes once there is something available. I'm experiencing some problems with Jackson and
+optional types (e.g. Integer|Null).
 
-The code is not very beautiful, but I'll clean it up a bit, I hope.
+The code is now a lot cleaner.
+## Changes
 
+### v0.2.0
+
+* code cleanup
+
+* adapted to Ceylon SDK 1.3
+
+* Support for MIME types: Content-Type, Accept headers and consumes/produces attributes for endpoints
+  (not finished yet)
+  
+### v0.1.0
+
+* initial release
+  
 ## Usage
 
 ### Write some functions implementing endpoints
@@ -107,26 +122,27 @@ The mandatory `path` annotation on a class defines a common URL path prefix for 
 Create an instance of RESTServer and add the functions you wish to make available, then start the server:
 
 ```ceylon
-import de.dlkw.conjurup {
-    RESTServer
+import de.dlkw.conjurup.core {
+    Server,
+    consumes
 }
-import ceylon.net.http {
+import ceylon.http.common {
     get
 }
 
 shared void run() {
-	value restServer = RESTServer();
+	value server = Server();
+	
+	// add additional converters, serializers, deserializers if needed
 	
 	// for a toplevel function
-	restServer.addEndpoint("add", get, `addAll`);
-	
-    // for methods in a class instance
-    Accessor accessor = Accessor("test");
-    restServer.addResourceAccessor(accessor);
+    consumes(["application/json"])
+    produces(["application/json"])
+	server.addEndpoint("/add", get, `addAll`);
 
 	// ... add more functions or objects
 	
-	restServer.start();
+	server.start();
 }
 ``` 
 
@@ -134,23 +150,27 @@ This will start the server listening on `localhost:8080`.
 
 You may not add more endpoints after the server is started.
 
-To get the Swagger definition of your API as a JSON object, call
-```ceylon
-    Object swagger = restServer.swagger("title", "version", "description");
-```
-after it is started.
+Swagger support will come later (hopefully).
 
 I'm not satisfied with the annotations and their names yet; it's likely that part will change.
 
-### Adding type decoders
+### Adding type converters
 
-To support more parameter types, you can register decoders. For example, to get `ceylon.time::Date` via its
+To support more parameter types, you can register converters. For example, to get `ceylon.time::Date` via its
 `parseDate` function:
 
 ```
-restServer.registerTypeConverter(nullPropagationConverter(parseDate));
+server.registerTypeConverter(nullPropagationConverter(parseDate));
 ```
 
 The `nullPropagatingConverter` is a convenience function to use "standard" Ceylon type parsing functions
 with a semantic like `parseInteger`, `parseFloat` etc. To see how to use another `null`-semantics,
 see the source code for TypeConverters.booleanConverter.
+
+### Adding request body Serializers
+
+needs to be written, see test.de.dlkw.conjurup::test01.
+
+### Adding response body Deserializers
+
+needs to be written, see test.de.dlkw.conjurup::test01.

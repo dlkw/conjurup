@@ -3,21 +3,18 @@ import ceylon.language.meta.declaration {
     ClassDeclaration,
     ValueDeclaration
 }
-import ceylon.net.http {
+import ceylon.http.common {
     AbstractMethod,
     get
 }
 
-import de.dlkw.conjurup {
-    ParamType,
-    query
-}
-shared annotation PathAnnotation path(String ppath) => PathAnnotation(ppath);
+shared annotation PathAnnotation path(String path) => PathAnnotation(path);
 
 "Annotates a method to define resource access in a RESTful API."
 shared annotation ResourceAccessAnnotation resourceAccess(AbstractMethod method = get, String path = "") => ResourceAccessAnnotation(method, path);
 shared annotation ParamAnnotation param(ParamType type = query, String name = "") => ParamAnnotation(type, name);
-shared annotation ConsumesAnnotation consumes(String contentType) => ConsumesAnnotation(contentType);
+shared annotation ConsumesAnnotation consumes([String+] contentType) => ConsumesAnnotation(contentType);
+shared annotation ProducesAnnotation produces([String+] contentType) => ProducesAnnotation(contentType);
 
 shared final annotation class PathAnnotation(shared String ppath)
         satisfies OptionalAnnotation<PathAnnotation, ClassDeclaration>
@@ -31,6 +28,10 @@ shared final annotation class ParamAnnotation(shared ParamType type, shared Stri
         satisfies OptionalAnnotation<ParamAnnotation, ValueDeclaration>
         {}
 
-shared final annotation class ConsumesAnnotation(shared String contentType)
+shared final annotation class ConsumesAnnotation(shared [String+] contentTypes)
         satisfies OptionalAnnotation<ConsumesAnnotation, ClassDeclaration|FunctionDeclaration>
         {}
+
+shared final annotation class ProducesAnnotation(shared [String+] contentTypes)
+        satisfies OptionalAnnotation<ProducesAnnotation, ClassDeclaration|FunctionDeclaration>
+{}

@@ -1,0 +1,28 @@
+<overrides xmlns="http://www.ceylon-lang.org/xsd/overrides">
+    <module groupId="com.kjetland"
+            artifactId="mbknor-jackson-jsonschema_2.11"
+            version="1.0.8">
+        <!--
+        <share module="com.fasterxml.jackson.databind"
+               version="2.7.4"/>
+               -->
+        <remove groupId="com.fasterxml.jackson.core"
+               artifactId="jackson-databind"/>
+        <add groupId="com.fasterxml.jackson.core"
+               artifactId="jackson-databind"
+               version="2.8.4"/>
+        <add groupId="com.fasterxml.jackson.core"
+               artifactId="jackson-core"
+               version="2.8.4"/>
+    </module>
+    <artifact groupId="com.fasterxml.jackson.core"
+           artifactId="jackson-databind"
+           version="2.8.4">
+        <shared groupId="com.fasterxml.jackson.core"
+               artifactId="jackson-core"
+               version="2.8.4"/>
+        <shared groupId="com.fasterxml.jackson.core"
+               artifactId="jackson-annotations"
+               version="2.8.0"/>
+    </artifact>
+</overrides>
