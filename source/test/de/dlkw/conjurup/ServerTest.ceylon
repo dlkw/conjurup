@@ -35,11 +35,18 @@ object xmlSer extends Serializer<Object>("application/xml")
     shared actual String serialize(Object entity) => "xml ser of ``type(entity)``";
 }
 
+object toStringSer extends Serializer<Object>("text/plain")
+{
+    shared actual String serialize(Object entity) => entity.string;
+}
+
 shared void test01()
 {
     addLogWriter(writeSimpleLog);
-    log.info("hallo!");
+
     value server = Server();
+
+    server.putSerializer(toStringSer);
 
     if (exists x = server.putSerializer(jacksonSer)) {
         log.debug("replacing existing 3");
@@ -59,11 +66,14 @@ shared void test01()
     server.start();
 }
 
+consumes(["*/*"])
 Boolean even(param Integer b)
 {
     return b % 2 == 0;
 }
 
+consumes(["*/*"])
+produces(["text/plain"])
 Integer twoparm(param Integer[] bs)
 {
     value x = bs.fold(0)(plustest);
