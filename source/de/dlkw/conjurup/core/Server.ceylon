@@ -8,7 +8,8 @@ import ceylon.collection {
 import ceylon.http.common {
     HttpMethod=Method,
     contentTypeFormUrlEncoded,
-    contentType
+    contentType,
+    get
 }
 import ceylon.http.server {
     Request,
@@ -44,6 +45,40 @@ import ceylon.logging {
 
 Logger log = logger(`package de.dlkw.conjurup.core`);
 
+"""
+   Server for serving to HTTP requests.
+
+   After creating and before calling start(), the server can be configured.
+   Configuring consist of <ul>
+   <li>adding/replacing parameter converters,</li>
+   <li>adding/replacing request body deserializers,</li>
+   <li>adding/replacing response body serializers,</li>
+   <li>adding endpoint functions.</li>
+   </ul>
+
+   Converters are used to convert the character string parameter values of the request
+   to arguments of the endpoint functions. A converter for a certain type T (say, Integer)
+   will be used to fill any function arguments of types T, T?, T[], and T?[]. Instead of
+   Sequentials, Iterables or Lists can also be used.
+
+   The server is preconfigured with a converter for type String (identity)
+   and with converters for the following types
+   using the function makeNullPropagatingConverter:
+   <ul>
+   <li>Integer</li>
+   <li>Float</li>
+   </ul>
+
+   For type Boolean, a special converter is preconfigured which converts the values
+   "true", "1", "yes", "on", "" to true
+   and "false", "0", "no", "off", null to false. With this converter, a Boolean?
+   function parameter makes no sense because it will never receive a null value.
+   This converter enables true/false switches like
+   http://localhost/run?flag for flag==true and
+   http://localhost/run for flag==false.
+   You might not like this converter and wish to replace it e.g. with
+   putConverter(makeNullPropagatingConverter(parseBoolean)) or any other converter.
+"""
 shared class Server()
 {
     // FIXME configure logging not in this class
@@ -167,15 +202,27 @@ shared class Server()
         return ed.putDeserializer<Out>(deserializer);
     }
 
-    shared void addEndpoint<R>(path, method, annotatedFunction)
+    """
+       Add a function as endpoint to be served by this Server.
+    """
+    shared void addEndpoint<Result>(aFunction, path = null, method = get)
     {
-        String path;
+        "The function to serve as endpoint."
+        Function<Result, Nothing> aFunction;
+
+        "The URL path where to serve the endpoint. It is the part of the URL
+         directly following the host name/port.
+
+         If null (default), the function name is used."
+        String? path;
+        String _path = path else aFunction.declaration.name;
+
+        "The HTTP method for which the server shall provide access to the endpoint."
         HttpMethod method;
-        Function<R, Nothing> annotatedFunction;
 
-        String canonicalizedPath = canonicalizePathComponent(path);
+        String canonicalizedPath = canonicalizePathComponent(_path);
 
-        value functionInfo = makeFunctionInfo<R>(canonicalizedPath, annotatedFunction);
+        value functionInfo = makeFunctionInfo<Result>(canonicalizedPath, aFunction, method);
 
         assertAbsentThenPut(map({canonicalizedPath -> map({method -> functionInfo})}));
     }
@@ -223,12 +270,14 @@ shared class Server()
         }
     }
 
-    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction)
+    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction, method)
     {
         String canonicalizedPath;
         Function<Result, Nothing> annotatedFunction;
+        HttpMethod method;
 
-        value [allconsumes, produces, parameterInfo, responseInfo] = collectInOutInfo(annotatedFunction, canonicalizedPath);
+        value [allconsumes, produces, parameterInfo, responseInfo] =
+                collectInOutInfo(annotatedFunction, canonicalizedPath, method);
 
         value typeSerializers = es.selectSerializer<Result>();
         // FIXME
@@ -291,20 +340,32 @@ shared class Server()
         return FunctionInfo(annotatedFunction.string, allconsumes, produces, parameterInfo, service, responseInfo);
     }
 
-    [[String+], [String+], ParameterInfo[], ResponseInfo] collectInOutInfo(Function<Anything, Nothing> annotatedFunction, String ppath,
-        // FIXME really this consumes default?
-        String objectConsumesDefault = contentTypeFormUrlEncoded,
-        // FIXME really this produces default?
-        String objectProducesDefault = "application/json")
+    [[String+], [String+], ParameterInfo[], ResponseInfo] collectInOutInfo(
+            Function<Anything, Nothing> annotatedFunction,
+            String ppath,
+            HttpMethod method,
+            [String+]? consumes = null,
+            String objectProducesDefault = "text/plain")
     {
         value functionDeclaration = annotatedFunction.declaration;
 
-        [String+] consumes;
-        if (exists consumesAnnotation = annotations(`ConsumesAnnotation`, functionDeclaration)) {
-            consumes = consumesAnnotation.contentTypes;
+        [String+] detConsumes;
+        if (exists consumes) {
+            detConsumes = consumes;
+        }
+        else if (exists consumesAnnotation = annotations(`ConsumesAnnotation`, functionDeclaration)) {
+            detConsumes = consumesAnnotation.contentTypes;
         }
         else {
-            consumes = [objectConsumesDefault];
+            switch (method)
+            case (get) {
+                // no body is submitted, so any or missing Content-Type request header will be accepted
+                detConsumes = ["*/*"];
+            }
+            else {
+                // use this as default to enable form parameters
+                detConsumes = [contentTypeFormUrlEncoded];
+            }
         }
 
         [String+] produces;
@@ -350,7 +411,7 @@ shared class Server()
                     if (haveBodyParameter) {
                         throw AssertionError("form and body parameters not possible simultaneously");
                     }
-                    if (consumes != "application/x-www-form-urlencoded") {
+                    if (detConsumes != "application/x-www-form-urlencoded") {
                         throw AssertionError("form parameter needs consumes(\"application/x-www-form-urlencoded\")");
                     }
                     haveFormParameter = true;
@@ -373,7 +434,7 @@ shared class Server()
                         throw AssertionError("No deserializers to body parameter type ``parameterType`` found.");
                     }
                     value knownKeys = typeDeserializers.map((e)=>e.key);
-                    if (nonempty missing = consumes
+                    if (nonempty missing = detConsumes
                         .filter((s)=>!knownKeys.contains(s))
                         .sequence()) {
                         throw AssertionError("No deserializer for any of the MIME types ``missing`` to body parameter type ``parameterType`` found.");
@@ -386,7 +447,7 @@ shared class Server()
 
         value t = annotatedFunction.type;
         // FIXME default
-        return [consumes, produces, args, ResponseInfo(t)];
+        return [detConsumes, produces, args, ResponseInfo(t)];
     }
 
     SimpleParameterInfo buildArgumentCreator(String parameterName, ParamType paramType, Type<Object?> _type)

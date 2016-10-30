@@ -28,7 +28,7 @@ import ceylon.language.meta {
     type
 }
 
-Logger log = logger(`package test.de.dlkw.conjurup`);
+Logger log = logger(`package`);
 
 object xmlSer extends Serializer<Object>("application/xml")
 {
@@ -58,11 +58,11 @@ shared void test01()
         log.debug("replacing existing 3");
     }
 
-    server.addEndpoint("/test01", get, `even`);
-    server.addEndpoint("/test02", get, `twoparm`);
-    server.addEndpoint("/test03", get, `jsonBindTest`);
-    server.addEndpoint("/test04", post, `jsonBindTest2`);
-    server.addEndpoint("/test05", get, `plustest`);
+    server.addEndpoint(`even`, "/test01");
+    server.addEndpoint(`twoparm`, "/test02");
+    server.addEndpoint(`jsonBindTest`, "/test03");
+    server.addEndpoint(`jsonBindTest2`, "/test04", post);
+    server.addEndpoint(`plustest`, "/test05");
     server.start();
 }
 

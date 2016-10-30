@@ -3,7 +3,9 @@ import ceylon.collection {
     linked
 }
 import ceylon.json {
-    Value
+    Value,
+    JsonObject = Object,
+    JsonArray = Array
 }
 import ceylon.language.meta {
     type
@@ -64,9 +66,21 @@ shared abstract class Serializer<in Argument>(shared String mimetype)
     shared formal String serialize(Argument entity);
 }
 
-object simpleJsonSer extends Serializer<Value>("application/json")
+shared object simpleJsonSer extends Serializer<Value>("application/json")
 {
-    shared actual String serialize(Value jsonValue) => "ser json";
+    shared actual String serialize(Value jsonValue)
+    {
+        switch (jsonValue)
+        case (is Integer|Float|Boolean|JsonObject|JsonArray) {
+            return jsonValue.string;
+        }
+        case (is String) {
+            return "\"``jsonValue``\"";
+        }
+        case (is Null) {
+            return "null";
+        }
+    }
 }
 
 //class TypedEntry<in T>(shared Type<T> key, shared Map<String, Serializer<T>> item){}
@@ -123,12 +137,11 @@ class EntitySerializers3()
         value sMap = tMap.get(`Sub`);
         if (is Null sMap) {
             value newMap = map({ serializer.mimetype->serializer });
-            print("adding for subtype `` `Sub` ``");
+            log.debug("adding for subtype `` `Sub` ``");
             tMap = map<Type<Anything>, Map<String, Serializer<Nothing>>>({ `Sub`->newMap, *tMap.filter((t->m) { print("process ``t `` subtype of `` `Sub` ``?");
                 print(if (t != `Sub`) then "keep" else "replace"); return t != `Sub`;}) });
             //tMap = map({`Sub`->newMap});
-            print(tMap);
-            print(tMap.size);
+            log.debug("type map now is ``tMap``");
             return null;
         }
 
