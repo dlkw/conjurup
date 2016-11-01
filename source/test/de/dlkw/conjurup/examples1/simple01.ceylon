@@ -27,7 +27,7 @@ shared void simple01()
     value log = logger(`package`);
 
     value server = Server();
-    server.putSerializer(toStringSer);
+    server.putSerializer<Object>(toStringSer);
 
     server.addEndpoint(`echo`);
 
@@ -52,7 +52,7 @@ shared void simple01()
 
     server.start();
 }
-
+produces(["application/json","text/plain"])
 String echo(param String arg) => arg;
 
 Float add2(param Float sum1, param Integer sum2, param Boolean negate)

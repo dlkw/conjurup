@@ -42,6 +42,9 @@ import ceylon.logging {
     logger,
     trace
 }
+import ceylon.json {
+    Value
+}
 
 Logger log = logger(`package de.dlkw.conjurup.core`);
 
@@ -89,7 +92,10 @@ shared class Server()
     value pathMap = HashMap<String, MutableMap<HttpMethod, FunctionInfo>>();
 
     value tc = TypeConverters();
-    value es = EntitySerializers3();
+    value es = SerializerRegistry();
+    if (exists x = es.putSerializer<Value>(simpleJsonSer)) {
+        log.debug("replacing existing 1");
+    }
     value ed = EntityDeserializers();
 
     "Starts this server in the current thread. This method will not return before the server is stopped."
@@ -191,10 +197,10 @@ shared class Server()
 
     /*=============== adding endpoints ====================*/
 
-    shared Serializer<Sub>? putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
+    shared void putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
     given Sub satisfies Argument
     {
-        return es.putSerializer<Argument, Sub>(serializer);
+        es.putSerializer<Argument, Sub>(serializer);
     }
 
     shared Deserializer? putDeserializer<Out>(Deserializer deserializer)
@@ -279,7 +285,7 @@ shared class Server()
         value [allconsumes, produces, parameterInfo, responseInfo] =
                 collectInOutInfo(annotatedFunction, canonicalizedPath, method);
 
-        value typeSerializers = es.selectSerializer<Result>();
+        value typeSerializers = es.collectSerializers<Result>(produces);
         // FIXME
         if (is Null typeSerializers) {
             throw AssertionError("No serializers for result type `` `Result` `` found.");
