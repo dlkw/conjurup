@@ -1,5 +1,6 @@
 import ceylon.logging {
-    logger
+    logger,
+    debug
 }
 
 import de.dlkw.conjurup.core {
@@ -10,9 +11,9 @@ shared void mimeOut()
 {
     setupLogging();
     value log = logger(`package`);
+    log.priority = debug;
 
     value server = Server();
-    server.putSerializer<Object>(toStringSer);
 
     /*
        this serves to requests created like:

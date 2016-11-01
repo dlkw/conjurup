@@ -23,7 +23,7 @@ import ceylon.io {
     SocketAddress
 }
 import ceylon.language.meta {
-    closedType = type,
+    closedType=type,
     annotations
 }
 import ceylon.language.meta.declaration {
@@ -39,11 +39,7 @@ import ceylon.language.meta.model {
 }
 import ceylon.logging {
     Logger,
-    logger,
-    trace
-}
-import ceylon.json {
-    Value
+    logger
 }
 
 Logger log = logger(`package de.dlkw.conjurup.core`);
@@ -86,18 +82,16 @@ Logger log = logger(`package de.dlkw.conjurup.core`);
 """
 shared class Server()
 {
-    // FIXME configure logging not in this class
-    log.priority = trace;
-
     value httpServer = newServer({});
 
     value pathMap = HashMap<String, MutableMap<HttpMethod, FunctionInfo>>();
 
     value tc = TypeConverters();
+
     value es = SerializerRegistry();
-    if (exists x = es.putSerializer<Value>(simpleJsonSer)) {
-        log.debug("replacing existing 1");
-    }
+    es.registerSerializer(toStringSerializer);
+    es.registerSerializer(simpleJsonSerializer);
+
     value ed = EntityDeserializers();
 
     "Starts this server in the current thread. This method will not return before the server is stopped."
@@ -199,10 +193,13 @@ shared class Server()
 
     /*=============== adding endpoints ====================*/
 
-    shared void putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
-    given Sub satisfies Argument
+    "Makes a serializer available for its mimetype and input type.
+
+     The Argument type is the type that the serializer will be used for, even if it can
+     serialize supertypes, too."
+    shared void registerSerializer<Argument>(Serializer<Argument> serializer)
     {
-        es.putSerializer<Argument, Sub>(serializer);
+        es.registerSerializer<Argument>(serializer);
     }
 
     shared Deserializer? putDeserializer<Out>(Deserializer deserializer)

@@ -1,33 +1,19 @@
-import de.dlkw.conjurup.core {
-    Server,
-    Serializer,
-    param,
-    consumes,
-    produces,
-    simpleJsonSer
-}
 import ceylon.logging {
-    logger
-}
-import ceylon.http.common {
-    get
-}
-import java.lang {
-    IllegalArgumentException
+    logger,
+    debug
 }
 
-object toStringSer extends Serializer<Object>("text/plain")
-{
-    shared actual String serialize(Object entity) => entity.string;
+import de.dlkw.conjurup.core {
+    Server
 }
 
 shared void simple01()
 {
     setupLogging();
-    value log = logger(`package`);
+    value log = logger(`package de.dlkw.conjurup.core`);
+    log.priority = debug;
 
     value server = Server();
-    server.putSerializer<Object>(toStringSer);
 
     /*
        this serves to requests created like:
@@ -44,7 +30,7 @@ shared void simple01()
        curl "http://localhost:8080/add2?sum1=5.1&sum2=8"
        curl "http://localhost:8080/add2?negate&sum1=5.1&sum2=8"
 
-       which produces a text/plain response with body "13" (no quotes).
+       which produce a text/plain response with bodies "13.1" resp. "-13.1" (no quotes).
     */
     server.addEndpoint(`add2`);
 
