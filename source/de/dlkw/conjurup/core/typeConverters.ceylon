@@ -23,7 +23,14 @@ shared class TypeConverters()
         converterMap.put(`Result`, converter);
     }
 
-    putConverter(makeNullPropagationConverter(parseInteger));
+    // the identity string converter
+    putConverter(identity);
+
+    // converters for the basic ceylon.language types
+    putConverter(makeNullPropagatingConverter(parseInteger));
+    putConverter(makeNullPropagatingConverter(parseFloat));
+
+    putConverter(booleanConverter);
 
     shared <Result?|ConversionError>(String?)? getTypeConverter<Result>()
     {
@@ -183,26 +190,30 @@ shared class TypeConverters()
     }
 }
 
-"Takes a standard converter like parseInteger and uses it to convert a String?.
+"Takes a standard parsing function like parseInteger and uses it to convert a String?.
+
  The returned converter has the following properties:
+ <ul>
+ <li>If the input to the given converter is null, null will be returned (hence the name nullPropagating).</li>
 
- If the input to the given converter is null, null will be returned (hence the name nullPropagation).
+ <li>If a non-null input is converted to null by the given converter (signalling a conversion error),
+ a ConversionError instance will be returned, indicating the bogus input value and the intended Result type.</li>
 
- If a non-null input is converted to null by the given converter (signalling a conversion error),
- a ConversionError instance will be returned, indicating the bogus input value and the intended Result type."
+ <li>If the used parser
+ </ul>"
 
-shared <Result?|ConversionError>(String?) makeNullPropagationConverter<Result>(Result?(String) stdConverter)
+shared <Result?|ConversionError>(String?) makeNullPropagatingConverter<Result>(Result?(String) stdParser)
 given Result satisfies Object
 {
-    Boolean canConvertEmpty = stdConverter("") exists;
+    Boolean canConvertEmpty = stdParser("") exists;
 
     Result?|ConversionError wrap(String? arg)
     {
-        log.debug("converting String ``if (exists arg) then "\"``arg``\"" else "null"`` to ``typeLiteral<Result>()``");
+        log.debug("converting String ``if (exists arg) then "\"``arg``\"" else "null"`` to `` `Result?` ``");
         if (is Null arg) {
             return null;
         }
-        value converted = stdConverter(arg);
+        value converted = stdParser(arg);
         if (exists converted) {
             return converted;
         }
@@ -212,6 +223,20 @@ given Result satisfies Object
         return ConversionError(arg, `Result`);
     }
     return wrap;
+}
+
+shared Boolean|ConversionError booleanConverter(String? stringValue)
+{
+    if (is Null stringValue) {
+        return false;
+    }
+    if ({ "", "true", "1", "yes", "on" }.any(stringValue.equalsIgnoringCase)) {
+        return true;
+    }
+    if ({ "false", "0", "no", "off" }.any(stringValue.equalsIgnoringCase)) {
+        return false;
+    }
+    return ConversionError(stringValue, `Boolean`);
 }
 
 class Discarder<S>()

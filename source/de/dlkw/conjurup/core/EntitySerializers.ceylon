@@ -1,9 +1,16 @@
 import ceylon.collection {
     HashMap,
-    linked
+    linked,
+    MutableMap,
+    MutableList,
+    ArrayList,
+    SortedMap,
+    TreeMap
 }
 import ceylon.json {
-    Value
+    Value,
+    JsonObject = Object,
+    JsonArray = Array
 }
 import ceylon.language.meta {
     type
@@ -16,119 +23,176 @@ import ceylon.language.meta.model {
     Type,
     ClassModel,
     InterfaceModel,
-    Generic
+    Generic,
+    UnionType
 }
-
-/*
-class EntitySerializers()
-{
-    value registeredSerializers = ArrayList<Anything>();
-
-    shared Serializer<Argument>? putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
-        given Sub satisfies Argument
-    {
-        log.debug("adding ``serializer.mimetype`` serializer `` `Sub` ``->``serializer``");
-        for (entry in registeredSerializers) {
-            if (is TypedEntry<Sub> entry) {
-                value type = entry.key;
-                value map = entry.item;
-            }
-            assert (is HashMap<String, Serializer<Sub>> map);
-            if (`Sub`.subtypeOf(type)) {
-                assert (is Serializer<Argument> existing = (map of HashMap<String, Serializer<Sub>>).put(serializer.mimetype, serializer));
-                print(registeredSerializers);
-                return existing;
-            }
-        }
-        value map = HashMap<String, Serializer<Sub>>{ entries = {serializer.mimetype->serializer}; };
-        registeredSerializers.add(TypedEntry(`Sub`, map));
-        print(registeredSerializers);
-        return null;
-    }
-    putSerializer<Value, Value>(jacksonSer);
-
-    shared Map<String, Serializer<Entity>>? selectSerializer<Entity>()
-    {
-        value typeSerializers = registeredSerializers.filter((e) => `Entity`.subtypeOf(e.key)).map((e) => e.item).first;
-        if (is Null typeSerializers) {
-            return null;
-        }
-        assert (is Map<String, Serializer<Entity>> typeSerializers);
-        return typeSerializers;
-    }
-}
-*/
 
 shared abstract class Serializer<in Argument>(shared String mimetype)
 {
     shared formal String serialize(Argument entity);
 }
 
-object simpleJsonSer extends Serializer<Value>("application/json")
+shared object simpleJsonSer extends Serializer<Value>("application/json")
 {
-    shared actual String serialize(Value jsonValue) => "ser json";
+    shared actual String serialize(Value jsonValue)
+    {
+        switch (jsonValue)
+        case (is Integer|Float|Boolean|JsonObject|JsonArray) {
+            return jsonValue.string;
+        }
+        case (is String) {
+            return "\"``jsonValue``\"";
+        }
+        case (is Null) {
+            return "null";
+        }
+    }
 }
 
-//class TypedEntry<in T>(shared Type<T> key, shared Map<String, Serializer<T>> item){}
-
-/*
-class EntitySerializers2()
+class SerializerRegistry()
 {
-    value typePart = ArrayList<Type<Anything>>();
-    value serializerPart = ArrayList<Map<String, Serializer<Nothing>>>();
+    MutableMap<String, MutableList<Type<Anything>->Serializer<Nothing>>> mimetypeMap = HashMap<String, MutableList<Type<Anything>->Serializer<Nothing>>>();
 
-    shared Serializer<Argument>? putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
-    given Sub satisfies Argument
+    shared void putSerializer<Possible, UsedFor = Possible>(Serializer<Possible> serializer)
+        given UsedFor satisfies Possible
     {
-        log.debug("adding ``serializer.mimetype`` serializer `` `Sub` ``->``serializer``");
-        for (i->t in typePart.indexed) {
-            if (is Sub t) {
-                value type = entry.key;
-                value map = entry.item;
+        log.debug("adding ``serializer.mimetype`` serializer `` `UsedFor` ``->``serializer``");
+
+        assert (`UsedFor` != `Nothing`);
+
+        if (is UnionType<> tArg = `UsedFor`) {
+            for (comp in tArg.caseTypes) {
+                value mDecl = `function putSerializer`;
+                value method = mDecl.memberApply<SerializerRegistry, Anything, [Serializer<Possible>]>(`SerializerRegistry`, `Possible`, comp);
+                value fun = method.bind(this);
+                fun(serializer);
             }
-            assert (is HashMap<String, Serializer<Sub>> map);
-            if (`Sub`.subtypeOf(type)) {
-                assert (is Serializer<Argument> existing = (map of HashMap<String, Serializer<Sub>>).put(serializer.mimetype, serializer));
-                print(registeredSerializers);
-                return existing;
+            return;
+        }
+
+        log.debug("really adding ``serializer.mimetype`` serializer `` `UsedFor` ``->``serializer``");
+
+        // use a tree map that sorts according to topological type hierarchy order
+        value typeList = putIfNotPresent(mimetypeMap, serializer.mimetype, ()=>ArrayList<Type<Anything>->Serializer<Nothing>>());
+
+        for (i->e in typeList.indexed) {
+            Comparison|Undefined partialComp = typeHierarchyCompare(`UsedFor`, e.key);
+            if (partialComp == smaller) {
+                typeList.insert(i, `UsedFor`->serializer);
+                break;
+            }
+            else if (partialComp == equal) {
+                typeList.set(i, `UsedFor`->serializer);
+                break;
             }
         }
-        value map = HashMap<String, Serializer<Sub>>{ entries = {serializer.mimetype->serializer}; };
-        typePart.add(`Sub`);
-        serializerPart.add(map);
-        return null;
-    }
-    putSerializer<Value, Value>(jacksonSer);
+        else {
+            typeList.add(`UsedFor`->serializer);
 
-    shared Map<String, Serializer<Entity>>? selectSerializer<Entity>()
+            log.debug("mimetypemap now ``mimetypeMap``");
+        }
+    }
+
+    shared Map<String, Serializer<Entity>>? collectSerializers<Entity>({String+} mimetypes)
     {
-        value typeSerializers = registeredSerializers.filter((e) => `Entity`.subtypeOf(e.key)).map((e) => e.item).first;
-        if (is Null typeSerializers) {
+        String m = mimetypes.first;
+
+        value typeMap = mimetypeMap[m];
+        if (is Null typeMap) {
             return null;
         }
-        assert (is Map<String, Serializer<Entity>> typeSerializers);
-        return typeSerializers;
+
+        value x = mimetypes.map((m)=>m->mimetypeMap[m]?.find((t->s)=>`Entity`.subtypeOf(t))?.item);
+        log.debug("checking ``x``");
+        value y = x        .map((t->s)
+                {
+                    if (is Null s) {
+                        // FIXME
+                        throw AssertionError("No serializer for ``m`` to `` `Entity` `` found");
+                    }
+                    assert (is Serializer<Entity> s);
+                    return t->s;
+                });
+        return map(y);
     }
 }
-*/
+
+
+class Undefined(){}
+object undefined extends Undefined(){}
+Comparison|Undefined typeHierarchyCompare(Type<Anything> t1, Type<Anything> t2)
+    => if (t1.subtypeOf(t2)) then smaller
+        else if (t1.supertypeOf(t2)) then larger
+        else undefined;
+
+shared void tls()
+{
+    MutableList<String> n = ArrayList<String>{};//elements={"q", "w", "aa", "s"};};
+    for (i -> it in n.indexed) {
+        print("``i``: ``it``");
+        if (it == "a") {
+            n.insert(i, "Z");
+            break;
+        }
+    }
+    else {
+        n.add("Z");
+    }
+    print(n);
+
+    alias B => Float;
+    alias A => Number<B>;
+
+    print(typeHierarchyCompare(`Integer`, `Integer&Float`));
+}
+Item putIfNotPresent<Key, Item>(MutableMap<Key, Item> map, Key key, Item create())
+    given Key satisfies Object
+{
+    Item? item = map[key];
+    if (exists item) {
+        return item;
+    }
+    Item newItem = create();
+    map.put(key, newItem);
+    return newItem;
+}
+
+object test1 extends Serializer<Object?>("")
+{
+    shared actual String serialize(Object? entity) => nothing;
+
+
+}
+
 
 class EntitySerializers3()
 {
+    SerializerRegistry().putSerializer(test1);
     variable Map<Type<Anything>, Map<String, Serializer<Nothing>>> tMap = map({});
 
     shared Serializer<Sub>? putSerializer<Argument, Sub = Argument>(Serializer<Argument> serializer)
     given Sub satisfies Argument
     {
         log.debug("adding ``serializer.mimetype`` serializer `` `Sub` ``->``serializer``");
+
+        if (is UnionType<> tArg = `Sub`) {
+            for (comp in tArg.caseTypes) {
+                value mDecl = `function putSerializer`;
+                value method = mDecl.memberApply<EntitySerializers3, Serializer<Nothing>?, [Serializer<Argument>]>(`EntitySerializers3`, `Argument`, comp);
+                value fun = method.bind(this);
+                fun(serializer);
+            }
+            return null;
+        }
+
         value sMap = tMap.get(`Sub`);
         if (is Null sMap) {
             value newMap = map({ serializer.mimetype->serializer });
-            print("adding for subtype `` `Sub` ``");
+            log.debug("adding for subtype `` `Sub` ``");
             tMap = map<Type<Anything>, Map<String, Serializer<Nothing>>>({ `Sub`->newMap, *tMap.filter((t->m) { print("process ``t `` subtype of `` `Sub` ``?");
                 print(if (t != `Sub`) then "keep" else "replace"); return t != `Sub`;}) });
             //tMap = map({`Sub`->newMap});
-            print(tMap);
-            print(tMap.size);
+            log.debug("type map now is ``tMap``");
             return null;
         }
 
@@ -147,9 +211,6 @@ class EntitySerializers3()
         print(tMap);
         print(tMap.size);
         return a;
-    }
-    if (exists x = putSerializer(simpleJsonSer)) {
-        log.debug("replacing existing 1");
     }
 
     shared Map<String, Serializer<Entity>>? selectSerializer<Entity>()
@@ -177,6 +238,7 @@ class EntityDeserializers()
     shared Deserializer? putDeserializer<Argument>(Deserializer deserializer)
     {
         assert (`Argument` != `Nothing`);
+
         value sMap = tMap.get(`Argument`);
         if (is Null sMap) {
             value newMap = HashMap<String, Deserializer>{ entries = { deserializer.mimetype->deserializer };};
@@ -204,47 +266,12 @@ class EntityDeserializers()
     shared actual String string => tMap.string;
 }
 
-interface Converter<in From, out To>
-given From satisfies Object
-given To satisfies Object
-{
-    shared formal To convert(From input);
-}
-
 shared interface Deserializer
-//satisfies Converter<String, To>
-//given To satisfies Object
 {
     shared formal String mimetype;
     shared formal O deserialize<out O>(String input)
             given O satisfies Object;
-    /*
-    shared default To deserialize(String src)
-    {
-        assert (is To obj = convert(src));
-        return obj;
-    }
-    */
 }
-
-
-/*
-interface TestDeserializer<To>
-given To satisfies Object
-{
-    shared formal Out deserialize<out Out>(String input)
-    given Out satisfies To;
-
-    shared default TestDeserializer<Restrict> restricted<Restrict>()
-    given Restrict satisfies To
-            => object satisfies TestDeserializer<Restrict>
-    {
-        shared actual T deserialize<out T>(String input)
-                given T satisfies Restrict
-                => outer.deserialize(input);
-    };
-}
-*/
 
 Type<Anything> getTypeParam(Anything obj, Integer argPos, ClassOrInterfaceDeclaration tDecl)
 {
