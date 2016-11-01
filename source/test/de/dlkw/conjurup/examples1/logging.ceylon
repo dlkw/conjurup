@@ -34,5 +34,6 @@ void setupLogging()
             print(logEntry);
         }
     };
+
 }
 
