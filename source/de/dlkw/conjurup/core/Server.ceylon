@@ -48,6 +48,8 @@ import ceylon.json {
 
 Logger log = logger(`package de.dlkw.conjurup.core`);
 
+[String+] prodDef = ["text/plain"];
+
 """
    Server for serving to HTTP requests.
 
@@ -211,24 +213,27 @@ shared class Server()
     """
        Add a function as endpoint to be served by this Server.
     """
-    shared void addEndpoint<Result>(aFunction, path = null, method = get)
+    shared void addEndpoint<Result>(fct, path = null, method = get, produces = null)
     {
         "The function to serve as endpoint."
-        Function<Result, Nothing> aFunction;
+        Function<Result, Nothing> fct;
 
         "The URL path where to serve the endpoint. It is the part of the URL
          directly following the host name/port.
 
          If null (default), the function name is used."
         String? path;
-        String _path = path else aFunction.declaration.name;
+        String _path = path else fct.declaration.name;
 
         "The HTTP method for which the server shall provide access to the endpoint."
         HttpMethod method;
 
+        "The MIME types that this endpoint can produce in the response body."
+        [String+]? produces;
+
         String canonicalizedPath = canonicalizePathComponent(_path);
 
-        value functionInfo = makeFunctionInfo<Result>(canonicalizedPath, aFunction, method);
+        value functionInfo = makeFunctionInfo<Result>(canonicalizedPath, fct, method, produces);
 
         assertAbsentThenPut(map({canonicalizedPath -> map({method -> functionInfo})}));
     }
@@ -276,22 +281,23 @@ shared class Server()
         }
     }
 
-    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction, method)
+    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction, method, producesx)
     {
         String canonicalizedPath;
         Function<Result, Nothing> annotatedFunction;
         HttpMethod method;
+        [String+]? producesx;
 
-        value [allconsumes, produces, parameterInfo, responseInfo] =
-                collectInOutInfo(annotatedFunction, canonicalizedPath, method);
+        value [allconsumes, effectiveProduces, parameterInfo, responseInfo] =
+                collectInOutInfo(annotatedFunction, canonicalizedPath, method, null, producesx);
 
-        value typeSerializers = es.collectSerializers<Result>(produces);
+        value typeSerializers = es.collectSerializers<Result>(effectiveProduces);
         // FIXME
         if (is Null typeSerializers) {
             throw AssertionError("No serializers for result type `` `Result` `` found.");
         }
         value knownKeys = typeSerializers.map((e)=>e.key);
-        if (nonempty missing = produces
+        if (nonempty missing = effectiveProduces
             .filter((s)=>!knownKeys.contains(s))
             .sequence()) {
             throw AssertionError("No serializer for result type `` `Result` `` to any of the MIME types ``missing`` found.");
@@ -343,15 +349,15 @@ shared class Server()
                 throw ServerException(httpStatus.badRequest);
             }
         }
-        return FunctionInfo(annotatedFunction.string, allconsumes, produces, parameterInfo, service, responseInfo);
+        return FunctionInfo(annotatedFunction.string, allconsumes, effectiveProduces, parameterInfo, service, responseInfo);
     }
 
     [[String+], [String+], ParameterInfo[], ResponseInfo] collectInOutInfo(
             Function<Anything, Nothing> annotatedFunction,
             String ppath,
             HttpMethod method,
-            [String+]? consumes = null,
-            String objectProducesDefault = "text/plain")
+            [String+]? consumes,
+            [String+]? objectProducesDefault)
     {
         value functionDeclaration = annotatedFunction.declaration;
 
@@ -375,11 +381,14 @@ shared class Server()
         }
 
         [String+] produces;
-        if (exists producesAnnotation = annotations(`ProducesAnnotation`, functionDeclaration)) {
+        if (exists objectProducesDefault) {
+            produces = objectProducesDefault;
+        }
+        else if (exists producesAnnotation = annotations(`ProducesAnnotation`, functionDeclaration)) {
             produces = producesAnnotation.contentTypes;
         }
         else {
-            produces = [objectProducesDefault];
+            produces = prodDef;
         }
 
         variable ParameterInfo[] args = [];

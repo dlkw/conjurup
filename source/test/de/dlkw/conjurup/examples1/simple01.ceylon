@@ -29,10 +29,17 @@ shared void simple01()
     value server = Server();
     server.putSerializer<Object>(toStringSer);
 
+    /*
+       this serves to requests created like:
+
+       curl "http://localhost:8080/echo?arg=hello"
+
+       which produces a text/plain response with body "hello" (no quotes)
+    */
     server.addEndpoint(`echo`);
 
     /*
-       this serves requests created like:
+       this serves to requests created like:
 
        curl "http://localhost:8080/add2?sum1=5.1&sum2=8"
        curl "http://localhost:8080/add2?negate&sum1=5.1&sum2=8"
@@ -42,7 +49,7 @@ shared void simple01()
     server.addEndpoint(`add2`);
 
     /*
-       this serves requests created like:
+       this serves to requests created like:
 
        curl "http://localhost:8080/addAll?val=5&val=8&val=-20"
 
@@ -52,10 +59,3 @@ shared void simple01()
 
     server.start();
 }
-produces(["application/json","text/plain"])
-String echo(param String arg) => arg;
-
-Float add2(param Float sum1, param Integer sum2, param Boolean negate)
-        => if (negate) then -(sum1 + sum2) else sum1 + sum2;
-
-Integer addAll(param Integer[] val) => val.fold(0)((s1, s2) => s1 + s2);

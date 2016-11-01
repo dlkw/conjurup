@@ -51,7 +51,7 @@ shared object simpleJsonSer extends Serializer<Value>("application/json")
 
 class SerializerRegistry()
 {
-    MutableMap<String, MutableMap<Type<Anything>, Serializer<Nothing>>> mimetypeMap = HashMap<String, MutableMap<Type<Anything>, Serializer<Nothing>>>();
+    MutableMap<String, MutableList<Type<Anything>->Serializer<Nothing>>> mimetypeMap = HashMap<String, MutableList<Type<Anything>->Serializer<Nothing>>>();
 
     shared void putSerializer<Possible, UsedFor = Possible>(Serializer<Possible> serializer)
         given UsedFor satisfies Possible
@@ -73,10 +73,24 @@ class SerializerRegistry()
         log.debug("really adding ``serializer.mimetype`` serializer `` `UsedFor` ``->``serializer``");
 
         // use a tree map that sorts according to topological type hierarchy order
-        value typeMap = putIfNotPresent(mimetypeMap, serializer.mimetype, ()=>TreeMap<Type<Anything>, Serializer<Nothing>>(typeHierarchyCompare));
+        value typeList = putIfNotPresent(mimetypeMap, serializer.mimetype, ()=>ArrayList<Type<Anything>->Serializer<Nothing>>());
 
-        typeMap.put(`UsedFor`, serializer);
-        log.debug("mimetypemap now ``mimetypeMap``");
+        for (i->e in typeList.indexed) {
+            Comparison|Undefined partialComp = typeHierarchyCompare(`UsedFor`, e.key);
+            if (partialComp == smaller) {
+                typeList.insert(i, `UsedFor`->serializer);
+                break;
+            }
+            else if (partialComp == equal) {
+                typeList.set(i, `UsedFor`->serializer);
+                break;
+            }
+        }
+        else {
+            typeList.add(`UsedFor`->serializer);
+
+            log.debug("mimetypemap now ``mimetypeMap``");
+        }
     }
 
     shared Map<String, Serializer<Entity>>? collectSerializers<Entity>({String+} mimetypes)
@@ -88,10 +102,7 @@ class SerializerRegistry()
             return null;
         }
 
-        value x = mimetypes.map((m)=>
-                m->mimetypeMap[m]?.filterKeys((t)=>`Entity`.subtypeOf(t))
-                        ?.first
-                        ?.item);
+        value x = mimetypes.map((m)=>m->mimetypeMap[m]?.find((t->s)=>`Entity`.subtypeOf(t))?.item);
         log.debug("checking ``x``");
         value y = x        .map((t->s)
                 {
@@ -106,10 +117,13 @@ class SerializerRegistry()
     }
 }
 
-Comparison typeHierarchyCompare(Type<Anything> t1, Type<Anything> t2)
+
+class Undefined(){}
+object undefined extends Undefined(){}
+Comparison|Undefined typeHierarchyCompare(Type<Anything> t1, Type<Anything> t2)
     => if (t1.subtypeOf(t2)) then smaller
         else if (t1.supertypeOf(t2)) then larger
-        else t1.string <=> t2.string;
+        else undefined;
 
 shared void tls()
 {
