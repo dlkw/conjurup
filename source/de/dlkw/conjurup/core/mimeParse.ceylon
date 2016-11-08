@@ -4,7 +4,7 @@
 
    Implemented after  code.google.com/archive/p/mimeparse/.
 """
-shared String? bestMatch(String[] supported, String accept)
+shared String? bestMatch({String*} supported, String accept)
 {
     value parseResultsAccept = accept.split(','.equals)
         .map(parseMimeType);

@@ -6,6 +6,9 @@ import ceylon.logging {
 import de.dlkw.conjurup.core {
     Server
 }
+import ceylon.http.common {
+    post
+}
 
 shared void simple01()
 {
@@ -42,6 +45,8 @@ shared void simple01()
        which produces a text/plain response with body "-7" (no quotes).
     */
     server.addEndpoint(`addAll`);
+
+    server.addEndpoint(`echo`, post, "/echo");
 
     server.start();
 }

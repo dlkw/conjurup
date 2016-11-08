@@ -48,11 +48,11 @@ shared void test01()
         log.debug("replacing existing 3");
     }
 
-    server.addEndpoint(`even`, "/test01");
-    server.addEndpoint(`twoparm`, "/test02");
-    server.addEndpoint(`jsonBindTest`, "/test03");
-    server.addEndpoint(`jsonBindTest2`, "/test04", post);
-    server.addEndpoint(`plustest`, "/test05");
+    server.addEndpoint(`even`, get, "/test01");
+    server.addEndpoint(`twoparm`, get, "/test02");
+    server.addEndpoint(`jsonBindTest`, get, "/test03");
+    server.addEndpoint(`jsonBindTest2`, post, "/test04");
+    server.addEndpoint(`plustest`, get, "/test05");
     server.start();
 }
 

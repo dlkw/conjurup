@@ -119,6 +119,23 @@ the `name` parameter of the `param` annotation.
 
 The mandatory `path` annotation on a class defines a common URL path prefix for all endpoints from that class. Each method annotated by `resourceAccess` will be installed as an endpoint. Its `path` parameter, together with the prefix from the `path` annotation on the class, gives the path for that endpoint. The `method` parameter gives the HTTP methods that are allowed for the endpoint.
 
+### Default endpoint settings
+
+The method from the addEndpoint call is used to register the endpoint.
+If none is given, GET will be used.
+
+The path from the addEndpoint call is used to register the endpoint.
+If none (null) is given, the function name will be used.
+
+The consumed MIME types from the consumes parameter of the addEndpoint call are used to register the endpoint.
+If none (null) are given, then "\*/\*" is used for GET endpoints, application/x-www-form-urlencoded is used
+for POST or PUT endpoints.
+
+The parameter locations from the param annotations in the parameter list of the endpoint function are used.
+If a endpoint function parameter doesn't have a param annotation, it will be treated as a query parameter
+for GET endpoints. For POST or PUT endpoints, if the consum...XXX / or request Content-Type? FIXME
+
+
 ### Register the endpoints
 
 Create an instance of RESTServer and add the functions you wish to make available, then start the server:

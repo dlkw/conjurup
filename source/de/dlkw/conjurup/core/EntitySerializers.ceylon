@@ -114,24 +114,18 @@ class SerializerRegistry()
      will be thrown."
     shared Map<String, Serializer<Entity>>? collectSerializers<Entity>({String+} mimetypes)
     {
-        String m = mimetypes.first;
-
-        value typeMap = mimetypeMap[m];
-        if (is Null typeMap) {
-            return null;
-        }
-
         value x = mimetypes.map((m)=>m->mimetypeMap[m]?.find((t->s)=>`Entity`.subtypeOf(t))?.item);
         log.debug("checking ``x``");
-        value y = x        .map((t->s)
+        value y = x.map((t->s)
                 {
                     if (is Null s) {
                         // FIXME do it like this on first not found?
-                        throw AssertionError("No serializer for `` `Entity` `` to ``m`` found");
+                        throw AssertionError("No serializer for `` `Entity` `` to ``t`` found");
                     }
                     assert (is Serializer<Entity> s);
                     return t->s;
                 });
+        print(y);
         return map(y);
     }
 }

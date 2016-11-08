@@ -84,7 +84,7 @@ shared class Server()
 {
     value httpServer = newServer({});
 
-    value pathMap = HashMap<String, MutableMap<HttpMethod, FunctionInfo>>();
+    value pathMap = HashMap<String, MutableMap<HttpMethod, CoProCombination0<FunctionInfo>>>();
 
     value tc = TypeConverters();
 
@@ -121,10 +121,24 @@ shared class Server()
 
     String summarizeLog()
             => "\n\t".join(pathMap.map(
-                    (path->methodMap) => "\n\t".join(methodMap.map(
-                            (method->functionInfo) => "``method`` ``path``: ``functionInfo.functionName``"))));
+        (path->methodMap) => "\n\t".join(methodMap.map(
+            (method->coProCombination) => "``method`` ``path``: ``mem(coProCombination)``"))));
 
-    void executeEndpoint(Map<HttpMethod, FunctionInfo> methodMap)(Request rq, Response rp)
+    String summarizeLog2()
+            => "\n\t".join(pathMap.map(
+        (path->methodMap) => "\n\t".join(methodMap.map(
+            (method->coProCombination) => "``method`` ``path``: XXX"))));
+
+    String mem(CoProCombination0<FunctionInfo> cpc)
+    {
+        StringBuilder sb = StringBuilder();
+        for (s in cpc.description(FunctionInfo.functionName)) {
+            sb.append("\n\t\t").append(s);
+        }
+        return sb.string;
+    }
+
+    void executeEndpoint(Map<HttpMethod, CoProCombination0<FunctionInfo>> methodMap)(Request rq, Response rp)
     {
         try {
             dispatchMethod(methodMap)(rq, rp);
@@ -134,7 +148,7 @@ shared class Server()
         }
     }
 
-    void dispatchMethod(Map<HttpMethod, FunctionInfo> methodMap)(Request rq, Response rp)
+    void dispatchMethod(Map<HttpMethod, CoProCombination0<FunctionInfo>> methodMap)(Request rq, Response rp)
     {
         if (exists functionInfo = methodMap.get(rq.method)) {
             serveMethod(rq, rp, functionInfo);
@@ -146,7 +160,7 @@ shared class Server()
         }
     }
 
-    void serveMethod(Request rq, Response rp, FunctionInfo functionInfo)
+    void serveMethod(Request rq, Response rp, CoProCombination0<FunctionInfo> coProCombo)
     {
         // use RFC fallback if no content type given in request
         String contentType;
@@ -158,32 +172,18 @@ shared class Server()
             log.debug("not Content-Type header in request, falling back to ``contentType``");
         }
 
-        String reallyConsume;
-        String serverAccepts = ",".join(functionInfo.consumes);
-        if (exists _reallyConsume = bestMatch([contentType], serverAccepts)) {
-            reallyConsume = _reallyConsume;
-        }
-        else {
-            log.debug("Content-Type mismatch: content type ``contentType`` does not match any of consumed ``serverAccepts``");
+        String accept = rq.header("Accept") else "*/*";
+
+        value dispatch = coProCombo.match(contentType, accept);
+        if (is UnsupportedMediaTypeError dispatch) {
             throw ServerException(httpStatus.unsupportedMediaType);
         }
-
-        String? accept = rq.header("Accept");
-        [String+] produces = functionInfo.produces;
-        String reallyProduce;
-        if (is Null accept) {
-            reallyProduce = produces.first;
+        if (is NotAcceptableError dispatch) {
+            throw ServerException(httpStatus.notAcceptable);
         }
-        else {
-            String? probe = bestMatch(produces, accept);
-            if (is Null probe) {
-                log.debug("Accepts mismatch: none of produced ``produces`` matches any of accepted ``accept``");
-                throw ServerException(httpStatus.notAcceptable);
-            }
-            reallyProduce = probe;
-        }
+        value functionInfo = dispatch[1];
 
-        functionInfo.service(rq, rp, reallyConsume, reallyProduce);
+        functionInfo.service(rq, rp, contentType, dispatch[0]);
     }
 
     void handleException(Request rq, Response rp, Throwable throwable)
@@ -210,7 +210,7 @@ shared class Server()
     """
        Add a function as endpoint to be served by this Server.
     """
-    shared void addEndpoint<Result>(fct, path = null, method = get, produces = null)
+    shared void addEndpoint<Result>(fct, method = get, path = null, consumes = null, produces = null)
     {
         "The function to serve as endpoint."
         Function<Result, Nothing> fct;
@@ -225,14 +225,18 @@ shared class Server()
         "The HTTP method for which the server shall provide access to the endpoint."
         HttpMethod method;
 
+        "The MIME types that this endpoint can understand as request content type."
+        [String+]? consumes;
+
         "The MIME types that this endpoint can produce in the response body."
         [String+]? produces;
 
         String canonicalizedPath = canonicalizePathComponent(_path);
 
-        value functionInfo = makeFunctionInfo<Result>(canonicalizedPath, fct, method, produces);
+        value functionInfo = makeFunctionInfo<Result>(canonicalizedPath, fct, method, consumes, produces);
 
-        assertAbsentThenPut(map({canonicalizedPath -> map({method -> functionInfo})}));
+        assertAbsentThenPut(canonicalizedPath, method, functionInfo);
+        //assertAbsentThenPut2(map({canonicalizedPath -> map({method -> functionInfo})}));
     }
 
     String canonicalizePathComponent(String path)
@@ -240,7 +244,31 @@ shared class Server()
         return "/" + path.trim("/".contains);
     }
 
-    void assertAbsentThenPut(Map<String, Map<HttpMethod, FunctionInfo>> newValues)
+    void assertAbsentThenPut(String path, HttpMethod method, FunctionInfo functionInfo)
+    {
+        MutableMap<HttpMethod, CoProCombination0<FunctionInfo>> storedMethodMap;
+        if (exists sMM = pathMap.get(path)) {
+            storedMethodMap = sMM;
+        }
+        else {
+            storedMethodMap = HashMap<HttpMethod, CoProCombination0<FunctionInfo>>();
+            pathMap.put(path, storedMethodMap);
+        }
+
+        CoProCombination0<FunctionInfo> coProCombination;
+        if (exists cpc = storedMethodMap.get(method)) {
+            coProCombination = cpc;
+        }
+        else {
+            coProCombination = CoProCombination0<FunctionInfo>();
+            storedMethodMap.put(method, coProCombination);
+        }
+
+        coProCombination.put(functionInfo.consumes, functionInfo.produces, functionInfo);
+    }
+
+    /*
+    void assertAbsentThenPut2(Map<String, Map<HttpMethod, FunctionInfo>> newValues)
     {
         assertAllAbsent(newValues);
 
@@ -277,16 +305,18 @@ shared class Server()
             throw PathAndMethodClashException(e);
         }
     }
+    */
 
-    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction, method, producesx)
+    FunctionInfo makeFunctionInfo<Result>(canonicalizedPath, annotatedFunction, method, consumes, producesx)
     {
         String canonicalizedPath;
         Function<Result, Nothing> annotatedFunction;
         HttpMethod method;
         [String+]? producesx;
+        [String+]? consumes;
 
         value [allconsumes, effectiveProduces, parameterInfo, responseInfo] =
-                collectInOutInfo(annotatedFunction, canonicalizedPath, method, null, producesx);
+                collectInOutInfo(annotatedFunction, canonicalizedPath, method, consumes, producesx);
 
         value typeSerializers = es.collectSerializers<Result>(effectiveProduces);
         // FIXME
